@@ -2,7 +2,7 @@
 This repository contains the source code and documentation for the Vending Machine embedded system project for CIS350.
 
 ## Cloning Repository
-To clone this repository onto your machine, open a terminal in your desired project folder location and use the command:
+To clone this repository onto your machine, open a terminal in your desired project folder location and use the command (omit brackets):
 ```
 git clone [repo_link] [opt_local_repo_name]
 ```
