@@ -6,7 +6,7 @@ To clone this repository onto your machine, open a terminal in your desired proj
 ```
 git clone [repo_link] [opt_local_repo_name]
 ```
-The local repository name is optional and lets you change the name of the folder that the project is cloned into.
+The local repository name is optional and lets you change the name of the folder that the project is cloned into. In addition, git must also be installed on your PC (download can be found here for Windows based machines: https://gitforwindows.org/).
 
 ## Coding Standards
 Some coding standards are used throughout the program for consistency and are listed here.
