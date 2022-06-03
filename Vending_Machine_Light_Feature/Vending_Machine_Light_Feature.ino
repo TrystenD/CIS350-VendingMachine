@@ -43,9 +43,9 @@ void loop() {
      digitalWrite(LED_PIN_3, HIGH); // turn on LED
   }
   else{
-     digitalWrite(LED_PIN_1, LOW); // turn on LED   
-     digitalWrite(LED_PIN_2, LOW); // turn on LED
-     digitalWrite(LED_PIN_3, LOW); // turn on LED
+     digitalWrite(LED_PIN_1, LOW); // turn off LED   
+     digitalWrite(LED_PIN_2, LOW); // turn off LED
+     digitalWrite(LED_PIN_3, LOW); // turn off LED
   }
 
   // print the value to Serial Monitor
