@@ -1,14 +1,14 @@
 /***********************************************************
- * File: VendingMachine_Rev1.ino
- *
- * Authors: Trysten Dembeck, JP, Joel Meyers
- *
- * Description: This program operates the vending machine
- *              controller for the CIS350 project.
- *
- * Device: Arduino Mega 2560
- *
- * Revision: 1
+   File: VendingMachine_Rev1.ino
+
+   Authors: Trysten Dembeck, JP, Joel Meyers
+
+   Description: This program operates the vending machine
+                controller for the CIS350 project.
+
+   Device: Arduino Mega 2560
+
+   Revision: 1
  ***********************************************************/
 
 /****************************************** Library Includes */
@@ -24,6 +24,8 @@ void handleItemMenu();
 void waitForUnpress(Adafruit_GFX_Button btn);
 void drawItemMenu(void);
 void drawPasswordMenu(void);
+void drawAcceptCoinMenu(void);
+void drawDispenseMenu(void);
 void handleItemMenu(void);
 void handlePasswordMenu(void);
 void clearPasswordpswdTextfield(void);
@@ -228,18 +230,18 @@ void loop()
       {
         break;
       }
-  }
-}
+  } // end switch
+} // end loop()
 
 /****************************************** Function Definitions */
 
 /*
- * @brief  This function handles the inputs and UI outputs of the
- *         password menu.
- *        
- * @param  None
- * @return void
- */
+   @brief  This function handles the inputs and UI outputs of the
+           password menu.
+
+   @param  None
+   @return void
+*/
 void handlePasswordMenu(void) {
   int x;
   int y;
@@ -300,22 +302,22 @@ void handlePasswordMenu(void) {
           tft.setTextColor(TEXT_COLOR, HX8357_BLACK);
           tft.setTextSize(TEXT_SIZE);
           tft.print(pswdTextfield);
-          
+
           delay(100); // UI debouncing
-        }
-      }
-    }
-  }
+        } // end if
+      } // end if
+    } // end for
+  } // end if
 }
 
 
 /*
- * @brief  This function initalizes system variables such
- *         as the item counts and prices.
- *        
- * @param  None
- * @return void
- */
+   @brief  This function initalizes system variables such
+           as the item counts and prices.
+
+   @param  None
+   @return void
+*/
 void initSystem(void) {
   setItemPrice(1, 1);
   setItemPrice(2, 2);
@@ -328,38 +330,38 @@ void initSystem(void) {
 
 
 /*
- * @brief  Setter for the item prices. Validates the selected item
- *         and desired price before setting it.
- *        
- * @param  uint8_t item: The item (1-3) to set the price of
- * @param  uint8_t coins: The number of coins required to purchase item (1-4)
- * 
- * @return void
- */
+   @brief  Setter for the item prices. Validates the selected item
+           and desired price before setting it.
+
+   @param  uint8_t item: The item (1-3) to set the price of
+   @param  uint8_t coins: The number of coins required to purchase item (1-4)
+
+   @return void
+*/
 void setItemPrice(uint8_t item, uint8_t coins) {
   if (((coins >= 1) && (coins <= 4)) && ((item >= 1) && item <= 3)) {
     switch (item) {
       case 1:
-          item1.price = coins;                                 // Set # of coins required
-          strcpy(item1.priceStr, validCoinAmounts[coins - 1]); // Set corresponding $ value
-          break;
+        item1.price = coins;                                 // Set # of coins required
+        strcpy(item1.priceStr, validCoinAmounts[coins - 1]); // Set corresponding $ value
+        break;
 
       case 2:
-          item2.price = coins;
-          strcpy(item2.priceStr, validCoinAmounts[coins - 1]);
+        item2.price = coins;
+        strcpy(item2.priceStr, validCoinAmounts[coins - 1]);
 
-          break;
+        break;
       case 3:
-          item3.price = coins;
-          strcpy(item3.priceStr, validCoinAmounts[coins - 1]);
+        item3.price = coins;
+        strcpy(item3.priceStr, validCoinAmounts[coins - 1]);
 
-          break;
-          
+        break;
+
       default:
-          Serial.println("Invalid Item. Must be between 1 and 3 inclusive.");
-          break;
-    }
-  }
+        Serial.println("Invalid Item. Must be between 1 and 3 inclusive.");
+        break;
+    } // end switch
+  } // end if
   else {
     Serial.println("Invalid Price. Must be between 1 and 4 inclusive.");
   }
@@ -367,35 +369,35 @@ void setItemPrice(uint8_t item, uint8_t coins) {
 
 
 /*
- * @brief  Setter for the item stock. Validates the selected item
- *         and desired stock before setting it.
- *        
- * @param  uint8_t item: The item (1-3) to set the stock of
- * @param  uint8_t count: The number of items to set as the machine's stock (1-MAX_MACRO)
- * 
- * @return void
- */
+   @brief  Setter for the item stock. Validates the selected item
+           and desired stock before setting it.
+
+   @param  uint8_t item: The item (1-3) to set the stock of
+   @param  uint8_t count: The number of items to set as the machine's stock (1-MAX_MACRO)
+
+   @return void
+*/
 void setItemCount(uint8_t item, uint8_t count) {
   if (((count >= 0) && (count <= MAX_ITEM_COUNT)) && ((item >= 1) && item <= 3)) {
     switch (item) {
       case 1:
-          item1.count = count;
-          break;
-          
+        item1.count = count;
+        break;
+
       case 2:
-          item2.count = count;
-          break;
-          
+        item2.count = count;
+        break;
+
       case 3:
-          item3.count = count;
-          break;
+        item3.count = count;
+        break;
 
       default:
-          Serial.println("Invalid Item. Must be between 1 and 3 inclusive.");
-          break;
-        
-    }
-  }
+        Serial.println("Invalid Item. Must be between 1 and 3 inclusive.");
+        break;
+
+    } // end switch
+  } // end if
   else {
     Serial.print("Invalid Count. Must be between 0 and "); Serial.print(MAX_ITEM_COUNT); Serial.println(" inclusive.");
   }
@@ -403,12 +405,12 @@ void setItemCount(uint8_t item, uint8_t count) {
 
 
 /*
- * @brief  Clears the password textfield so entered
- *         value is not saved by program.
- *        
- * @param  None
- * @return void
- */
+   @brief  Clears the password textfield so entered
+           value is not saved by program.
+
+   @param  None
+   @return void
+*/
 void clearPasswordTextfield(void) {
   for (uint8_t i = 0; i < 4; i++) {
     pswdTextfield[i] = ' ';         // Replace each character with a space
@@ -417,13 +419,13 @@ void clearPasswordTextfield(void) {
 }
 
 /*
- * @brief  Helper to display a message in the password menu.
- *         Used to display "Correct" or "Incorrect" when the
- *         password is entered by the user (under enter btn).
- *        
- * @param  const char *msg: Constant string message to display.
- * @return void
- */
+   @brief  Helper to display a message in the password menu.
+           Used to display "Correct" or "Incorrect" when the
+           password is entered by the user (under enter btn).
+
+   @param  const char *msg: Constant string message to display.
+   @return void
+*/
 void passwordMessage(const char *msg) {
   tft.fillRect(PASSWORD_MSG_X, PASSWORD_MSG_Y, 200, 16, HX8357_BLACK);
   tft.setCursor(PASSWORD_MSG_X, PASSWORD_MSG_Y);
@@ -433,13 +435,13 @@ void passwordMessage(const char *msg) {
 }
 
 /*
- * @brief  Handles the inputs and UI outputs within the select-item menu.
- *         This menu allows the user to select which item to purchase or 
- *         to enter maintenence mode.
- *        
- * @param  void
- * @return void
- */
+   @brief  Handles the inputs and UI outputs within the select-item menu.
+           This menu allows the user to select which item to purchase or
+           to enter maintenence mode.
+
+   @param  void
+   @return void
+*/
 void handleItemMenu(void) {
   int x;
   int y;
@@ -465,7 +467,7 @@ void handleItemMenu(void) {
 
           // Item 1 selected
           if (b == 0) {
-            
+
           }
           // Item 2 selected
           if (b == 1) {
@@ -473,27 +475,27 @@ void handleItemMenu(void) {
           }
           // Item 3 selected
           if (b == 2) {
-            
+
           }
           // Settings button pressed
           if (b == 3) {
             state = SM_PASSWORD;
           }
-        }
-      }
-    }
-  }
+        } // end if
+      } // end if contains()
+    } // end for
+  } // end if
 }
 
 
 /*
- * @brief  Handles the inputs and UI outputs within the set-item menu.
- *         This menu allows the user to increase or decrease the stock
- *         of the items in the machine and their prices.
- *        
- * @param  void
- * @return void
- */
+   @brief  Handles the inputs and UI outputs within the set-item menu.
+           This menu allows the user to increase or decrease the stock
+           of the items in the machine and their prices.
+
+   @param  void
+   @return void
+*/
 void handleSetItemMenu(void) {
   int x;
   int y;
@@ -504,8 +506,7 @@ void handleSetItemMenu(void) {
   x = map(p.y, TS_MAXY, TS_MINY, 0, tft.width());  // X flipped to Y
   y = map(p.x, TS_MINX, TS_MAXX, 0, tft.height()); // Y flipped to X
 
-  if (p.z >= MINPRESSURE && p.z <= MAXPRESSURE)
-  {
+  if (p.z >= MINPRESSURE && p.z <= MAXPRESSURE) {
     for (uint8_t b = 0; b < 13; b++) {
       if (EditBtns[b].contains(x, y)) {
         EditBtns[b].press(true);          // Tell the button it is pressed
@@ -529,7 +530,7 @@ void handleSetItemMenu(void) {
           else if (b == 3) {
             setItemPrice(1, item1.price - 1);
           }
-          
+
           // Item 2
           else if (b == 4) {
             setItemCount(2, item2.count + 1);
@@ -543,7 +544,7 @@ void handleSetItemMenu(void) {
           else if (b == 7) {
             setItemPrice(2, item2.price - 1);
           }
-          
+
           // Item 3
           else if (b == 8) {
             setItemCount(3, item3.count + 1);
@@ -579,20 +580,20 @@ void handleSetItemMenu(void) {
           tft.print(item3.priceStr);
 
           delay(100); // UI debouncing
-        }
-      }
-    }
-  }
+        } // end if
+      } // end if contains()
+    } // end for
+  } // end if
 }
 
 
 /*
- * @brief  This function draws all of the UI elements for the set-item
- *         menu (maintenence menu).
- *        
- * @param  void
- * @return void
- */
+   @brief  This function draws all of the UI elements for the set-item
+           menu (maintenence menu).
+
+   @param  void
+   @return void
+*/
 void drawSetItemMenu(void) {
   tft.fillScreen(HX8357_BLACK);   // Clear screen
   tft.setTextColor(HX8357_WHITE); // Text color is white
@@ -705,11 +706,11 @@ void drawSetItemMenu(void) {
 }
 
 /*
- * @brief  This function draws all of the UI elements for the password menu.
- *        
- * @param  void
- * @return void
- */
+   @brief  This function draws all of the UI elements for the password menu.
+
+   @param  void
+   @return void
+*/
 void drawPasswordMenu(void) {
   tft.fillScreen(HX8357_BLACK); // Clear screen
 
@@ -741,11 +742,11 @@ void drawPasswordMenu(void) {
 }
 
 /*
- * @brief  This function draws all of the UI elements for the select-item menu.
- *        
- * @param  void
- * @return void
- */
+   @brief  This function draws all of the UI elements for the select-item menu.
+
+   @param  void
+   @return void
+*/
 void drawItemMenu(void) {
   tft.fillScreen(HX8357_BLACK); // Clear screen
 
@@ -787,14 +788,36 @@ void drawItemMenu(void) {
   tft.print(item3.count);
 }
 
+/*
+   @brief  Draws the menu on the LCD for accepting coins from the user.
+
+   @param  void
+   @return void
+*/
+void drawAcceptCoinMenu(void) {
+
+
+
+  
+}
 
 /*
- * @brief  Blocking function that waits until a user lets go
- *         of the passed button.
- *        
- * @param  Adafruit_GFX_Button btn: The button to wait for a release.
- * @return void
- */
+   @brief  Draws the menu on the LCD for dispensing an item.
+
+   @param  void
+   @return void
+*/
+void drawDispenseMenu(void) {
+  
+}
+
+/*
+   @brief  Blocking function that waits until a user lets go
+           of the passed button.
+
+   @param  Adafruit_GFX_Button btn: The button to wait for a release.
+   @return void
+*/
 void waitForUnpress(Adafruit_GFX_Button btn) {
   TSPoint p = ts.getPoint();
   int x = map(p.y, TS_MAXY, TS_MINY, 0, tft.width());  // X flipped to Y
