@@ -18,6 +18,7 @@
 #include "Adafruit_HX8357.h"
 #include "TouchScreen.h"
 #include "string.h"
+#include "Arduino.h"
 
 /****************************************** Function Prototypes */
 void handleItemMenu();
@@ -26,6 +27,8 @@ void drawItemMenu(void);
 void drawPasswordMenu(void);
 void drawAcceptCoinMenu(void);
 void drawDispenseMenu(void);
+void handleAcceptCoinMenu(void);
+void handleDispenseMenu(void);
 void handleItemMenu(void);
 void handlePasswordMenu(void);
 void clearPasswordpswdTextfield(void);
@@ -33,6 +36,7 @@ void passwordMessage(const char *msg);
 void initSystem(void);
 void setItemPrice(uint8_t item, uint8_t price);
 void setItemCount(uint8_t item, uint8_t count);
+void coinDetected(void);
 
 /****************************************** Tocuhscreen calibration data */
 #define TS_MINX     10
@@ -152,7 +156,7 @@ uint16_t EditBtnColors[EDIT_BTNS_CNT] = {HX8357_DARKGREEN, HX8357_MAROON, HX8357
 #define MAX_ITEM_COUNT 3
 const char OWNER_PASSWORD[TEXT_LEN + 1] = "3251"; // Owner password (4 chars)
 
-uint8_t state = SM_IDLE; // State machine control variable
+uint8_t state = SM_ACCEPT_COINS; // State machine control variable
 uint8_t coinBalance = 0; // User's current coin balance
 
 const char validCoinAmounts[4][6] = {
@@ -161,6 +165,9 @@ const char validCoinAmounts[4][6] = {
   "$0.75",
   "$1.00"
 };
+
+int widthCount = 0;
+int impulseCount = 0;
 
 struct Item {
   uint8_t price;    // Price in number of quarters (1-4)
@@ -183,6 +190,8 @@ void setup()
   tft.setRotation(3);
   tft.setTextWrap(false);
 
+  attachInterrupt(digitalPinToInterrupt(2), coinDetected, RISING); 
+
   initSystem(); // Init system variables
 }
 
@@ -204,10 +213,18 @@ void loop()
       }
     case SM_ACCEPT_COINS:
       {
+        drawAcceptCoinMenu();
+        while (state == SM_ACCEPT_COINS) {
+          handleAcceptCoinMenu();
+        }
         break;
       }
     case SM_DISPENSE:
       {
+        drawDispenseMenu();
+        while (state == SM_ACCEPT_COINS) {
+          //handleAcceptDispenseMenu();
+        }
         break;
       }
     case SM_PASSWORD:
@@ -432,6 +449,46 @@ void passwordMessage(const char *msg) {
   tft.setTextColor(HX8357_WHITE);
   tft.setTextSize(2);
   tft.print(msg);
+}
+
+/*
+   @brief  Handles the inputs and UI outputs within the accept coins menu.
+           This menu accepts coins from the user and indicates
+           their amount due.
+
+   @param  void
+   @return void
+*/
+void handleAcceptCoinMenu(void) {
+  widthCount += 1;
+
+  if (widthCount >= 30 and impulseCount == 1){
+    coinBalance++;
+    if(coinBalance ==5) {
+      coinBalance = 1;
+    }
+    impulseCount = 0;
+    tft.fillRect(300, 175, 200, 50, HX8357_BLACK);
+    tft.setCursor(275, 175);
+    tft.print(validCoinAmounts[coinBalance - 1]);
+  }  
+}
+
+void coinDetected(void) {
+  Serial.println("INTERRUPTED");
+  impulseCount += 1; 
+  widthCount = 0;
+}
+
+/*
+   @brief  Handles the inputs and UI outputs within the item dispense menu.
+           This menu shows that an item is dispensing and thanks the user.
+
+   @param  void
+   @return void
+*/
+void handleDispenseMenu(void) {
+  
 }
 
 /*
@@ -795,10 +852,15 @@ void drawItemMenu(void) {
    @return void
 */
 void drawAcceptCoinMenu(void) {
-
-
-
+  tft.fillScreen(HX8357_BLACK); // Clear screen
   
+  // Draw item 1 price and quantity
+  tft.setTextSize(4);
+  tft.setTextColor(HX8357_CYAN);
+  tft.setCursor(100, 50);
+  tft.print("Enter Coins");
+  tft.setCursor(50, 175);
+  tft.print("Amnt Due: ");
 }
 
 /*
@@ -808,7 +870,7 @@ void drawAcceptCoinMenu(void) {
    @return void
 */
 void drawDispenseMenu(void) {
-  
+  tft.fillScreen(HX8357_BLACK); // Clear screen
 }
 
 /*
