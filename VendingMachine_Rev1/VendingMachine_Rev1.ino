@@ -33,7 +33,7 @@ void handleItemMenu(void);
 void handlePasswordMenu(void);
 void clearPasswordpswdTextfield(void);
 void passwordMessage(const char *msg);
-void initSystem(void);
+void initItems(void);
 void setItemPrice(uint8_t item, uint8_t price);
 void setItemCount(uint8_t item, uint8_t count);
 void coinDetected(void);
@@ -151,23 +151,36 @@ uint16_t EditBtnColors[EDIT_BTNS_CNT] = {HX8357_DARKGREEN, HX8357_MAROON, HX8357
                                          HX8357_DARKGREY
                                         };
 
+/****************************************** Accept Coins Menu Configuration */
+Adafruit_GFX_Button cnclSaleBtn;
+char cnclSaleBtnLabel[5] = "Cncl";
+uint16_t cnclSaleBtnColor = {HX8357_MAROON};
+
 
 /****************************************** System Global Variables and Structures */
 #define MAX_ITEM_COUNT 3
 const char OWNER_PASSWORD[TEXT_LEN + 1] = "3251"; // Owner password (4 chars)
 
-uint8_t state = SM_ACCEPT_COINS; // State machine control variable
-uint8_t coinBalance = 0; // User's current coin balance
+uint8_t state = SM_IDLE;                  // State machine control variable
 
-const char validCoinAmounts[4][6] = {
-  "$0.25",
-  "$0.50",
-  "$0.75",
-  "$1.00"
+const char validCoinAmounts[21][6] = {            // Valid coin amounts (up to $5.00)
+  "$0.00", "$0.25", "$0.50", "$0.75",
+  "$1.00", "$1.25", "$1.50", "$1.75",
+  "$2.00", "$2.25", "$2.50", "$2.75",
+  "$3.00", "$3.25", "$3.50", "$3.75",
+  "$4.00", "$4.25", "$4.50", "$4.75",
+  "$5.00",
 };
 
-int widthCount = 0;
-int impulseCount = 0;
+int widthCount = 0;   // Time width of coin acceptor pulse
+int impulseCount = 0; // Flag to indicate a coin was accepted
+
+
+// Monetary counters
+uint8_t machineCoinBank = 0; // Total number of coins in machine
+uint8_t coinBalance = 0;     // User's current coin balance
+uint8_t amntDue = 0;         // Amount due by user
+uint8_t selectedItem = 0;    // The item selected by user
 
 struct Item {
   uint8_t price;    // Price in number of quarters (1-4)
@@ -183,16 +196,17 @@ Item item3;
 void setup()
 {
   Serial.begin(115200);
+  //  tft.begin();
+  //  tft.fillScreen(HX8357_BLACK);
   tft.begin();
   tft.fillScreen(HX8357_BLACK);
-
-  tft.begin();
   tft.setRotation(3);
   tft.setTextWrap(false);
 
-  attachInterrupt(digitalPinToInterrupt(2), coinDetected, RISING); 
+  attachInterrupt(digitalPinToInterrupt(2), coinDetected, RISING);
 
-  initSystem(); // Init system variables
+  //coinBalance = 2;
+  initItems(); // Init item counts and prices
 }
 
 void loop()
@@ -335,8 +349,8 @@ void handlePasswordMenu(void) {
    @param  None
    @return void
 */
-void initSystem(void) {
-  setItemPrice(1, 1);
+void initItems(void) {
+  setItemPrice(1, 3);
   setItemPrice(2, 2);
   setItemPrice(3, 4);
 
@@ -360,17 +374,17 @@ void setItemPrice(uint8_t item, uint8_t coins) {
     switch (item) {
       case 1:
         item1.price = coins;                                 // Set # of coins required
-        strcpy(item1.priceStr, validCoinAmounts[coins - 1]); // Set corresponding $ value
+        strcpy(item1.priceStr, validCoinAmounts[coins]); // Set corresponding string $ value
         break;
 
       case 2:
         item2.price = coins;
-        strcpy(item2.priceStr, validCoinAmounts[coins - 1]);
+        strcpy(item2.priceStr, validCoinAmounts[coins]);
 
         break;
       case 3:
         item3.price = coins;
-        strcpy(item3.priceStr, validCoinAmounts[coins - 1]);
+        strcpy(item3.priceStr, validCoinAmounts[coins]);
 
         break;
 
@@ -380,7 +394,7 @@ void setItemPrice(uint8_t item, uint8_t coins) {
     } // end switch
   } // end if
   else {
-    Serial.println("Invalid Price. Must be between 1 and 4 inclusive.");
+    Serial.println("Invalid Price. Must be between 1 and 4 coins inclusive.");
   }
 }
 
@@ -460,25 +474,67 @@ void passwordMessage(const char *msg) {
    @return void
 */
 void handleAcceptCoinMenu(void) {
+  int x;
+  int y;
+  TSPoint p;
+
+  /** Check for coin inputs */
   widthCount += 1;
 
-  if (widthCount >= 30 and impulseCount == 1){
-    coinBalance++;
-    if(coinBalance ==5) {
-      coinBalance = 1;
-    }
-    impulseCount = 0;
-    tft.fillRect(300, 175, 200, 50, HX8357_BLACK);
+  if (widthCount >= 30 and impulseCount == 1) {   // Check if coin was valid and accepted
+    impulseCount = 0;                             // Reset impulse flag
+    coinBalance += 1;                             // Increase users balance
+    machineCoinBank+= 1;
+    amntDue -= 1;                                 // Decrease amount due
+
+    // Update amount due on LCD
+    tft.fillRect(300, 185, 200, 55, HX8357_BLACK);
     tft.setCursor(275, 175);
-    tft.print(validCoinAmounts[coinBalance - 1]);
-  }  
+    tft.print(validCoinAmounts[amntDue]);
+
+    if (amntDue == 0) {
+      state = SM_DISPENSE;
+    }
+  }
+
+  /** Check for cancel button input */
+  p = ts.getPoint();
+  x = map(p.y, TS_MAXY, TS_MINY, 0, tft.width());  // X flipped to Y
+  y = map(p.x, TS_MINX, TS_MAXX, 0, tft.height()); // Y flipped to X
+
+  // Valid press on screen if within valid pressure range
+  if (p.z >= MINPRESSURE && p.z <= MAXPRESSURE) {
+
+    if (cnclSaleBtn.contains(x, y)) {
+      cnclSaleBtn.press(true);          // Tell button that it was pressed
+
+      if (cnclSaleBtn.justPressed()) {
+        cnclSaleBtn.drawButton(true);   // Draw inverted button colors
+        waitForUnpress(cnclSaleBtn);    // Wait for user to let go of the button (blocking)
+        cnclSaleBtn.press(false);       // Tell button it is no longer pressed
+        cnclSaleBtn.drawButton(false);  // Draw button normally
+
+        // Cancel Sale Activities
+        amntDue = 0;
+        state = SM_IDLE;
+
+      } // end if
+    } // end if contains()
+  } // end if
 }
 
+/*
+   @brief  Interrupt handler for when a signal is received from the coin
+           acceptor (coin was inserted and accepted).
+
+   @param  void
+   @return void
+*/
 void coinDetected(void) {
-  Serial.println("INTERRUPTED");
-  impulseCount += 1; 
+  impulseCount += 1;
   widthCount = 0;
 }
+
 
 /*
    @brief  Handles the inputs and UI outputs within the item dispense menu.
@@ -488,8 +544,21 @@ void coinDetected(void) {
    @return void
 */
 void handleDispenseMenu(void) {
-  
+  if (selectedItem == 1) {
+    coinBalance -= item1.price;
+  }
+  else if (selectedItem == 2) {
+    coinBalance -= item2.price;
+  }
+  else if (selectedItem == 3) {
+    coinBalance -= item3.price;
+  }
+
+  //TODO: Set servo motor on and wait for IR sensor to trigger
+
+  state = SM_IDLE;
 }
+
 
 /*
    @brief  Handles the inputs and UI outputs within the select-item menu.
@@ -504,7 +573,23 @@ void handleItemMenu(void) {
   int y;
   TSPoint p;
 
-  // Retreive point from touchscren
+  /** Check for coin inputs */
+  widthCount += 1;
+
+  if (widthCount >= 30 and impulseCount == 1) {   // Check if coin was valid and accepted
+    impulseCount = 0;                             // Reset impulse flag
+    coinBalance += 1;                             // Increase users balance
+    machineCoinBank += 1;
+
+    // Update coin balance on LCD
+    tft.fillRect(0, 270, 200, 150, HX8357_BLACK);
+    tft.setCursor(25, 285);
+    tft.setTextColor(HX8357_GREEN);
+    tft.print("Balance: ");
+    tft.print(validCoinAmounts[coinBalance]);
+  }
+
+  /** Check for LCD screen input */
   p = ts.getPoint();
   x = map(p.y, TS_MAXY, TS_MINY, 0, tft.width());  // X flipped to Y
   y = map(p.x, TS_MINX, TS_MAXX, 0, tft.height()); // Y flipped to X
@@ -512,27 +597,51 @@ void handleItemMenu(void) {
   // Valid press on screen if within valid pressure range
   if (p.z >= MINPRESSURE && p.z <= MAXPRESSURE) {
 
-    for (uint8_t b = 0; b < 5; b++) {         // Loop through each button to see if it was pressed
+    for (uint8_t b = 0; b < 5; b++) {              // Loop through each button to see if it was pressed
       if (ItemMenuBtns[b].contains(x, y)) {
-        ItemMenuBtns[b].press(true);          // Tell a button that it was pressed
+        ItemMenuBtns[b].press(true);               // Tell a button that it was pressed
 
         if (ItemMenuBtns[b].justPressed()) {
-          ItemMenuBtns[b].drawButton(true);   // Draw inverted button colors
-          waitForUnpress(ItemMenuBtns[b]);    // Wait for user to let go of the button
-          ItemMenuBtns[b].press(false);       // Tell button it is no longer pressed
-          ItemMenuBtns[b].drawButton(false);  // Draw button normally
+          ItemMenuBtns[b].drawButton(true);        // Draw inverted button colors
+          waitForUnpress(ItemMenuBtns[b]);         // Wait for user to let go of the button (blocking)
+          ItemMenuBtns[b].press(false);            // Tell button it is no longer pressed
+          ItemMenuBtns[b].drawButton(false);       // Draw button normally
 
           // Item 1 selected
-          if (b == 0) {
+          if (b == 0 && item1.count > 0) {
+            selectedItem = 1;
 
+            if (coinBalance >= item1.price) {      // User's balance covers item cost
+              state = SM_DISPENSE;                 // Dispense item
+            }
+            else {                                 // User's balance is less than item cost
+              amntDue = item1.price - coinBalance; // Calc amount due
+              state = SM_ACCEPT_COINS;             // Get remaining cost from user
+            }
           }
           // Item 2 selected
-          if (b == 1) {
+          if (b == 1 && item2.count > 0) {
+            selectedItem = 2;
 
+            if (coinBalance >= item2.price) {      // User's balance covers item cost
+              state = SM_DISPENSE;                 // Dispense item
+            }
+            else {                                 // User's balance is less than item cost
+              amntDue = item2.price - coinBalance; // Calc amount due
+              state = SM_ACCEPT_COINS;             // Get remaining cost from user
+            }
           }
           // Item 3 selected
-          if (b == 2) {
+          if (b == 2 && item3.count > 0) {
+            selectedItem = 3;
 
+            if (coinBalance >= item3.price) {      // User's balance covers item cost
+              state = SM_DISPENSE;                 // Dispense item
+            }
+            else {                                 // User's balance is less than item cost
+              amntDue = item3.price - coinBalance; // Calc amount due
+              state = SM_ACCEPT_COINS;             // Get remaining cost from user
+            }
           }
           // Settings button pressed
           if (b == 3) {
@@ -543,6 +652,7 @@ void handleItemMenu(void) {
     } // end for
   } // end if
 }
+
 
 
 /*
@@ -756,10 +866,16 @@ void drawSetItemMenu(void) {
   EditBtns[11].initButton(&tft, 435, 175, EDIT_BUTTON_W, EDIT_BUTTON_W, HX8357_WHITE, EditBtnColors[11], HX8357_WHITE, EditBtnLabels[11], 2);
   EditBtns[11].drawButton();
 
-
   /** DONE BUTTON */
-  EditBtns[12].initButton(&tft, 240, 285, 450, 50, HX8357_WHITE, EditBtnColors[12], HX8357_WHITE, EditBtnLabels[12], 2);
+  EditBtns[12].initButton(&tft, 350, 285, 250, 50, HX8357_WHITE, EditBtnColors[12], HX8357_WHITE, EditBtnLabels[12], 2);
   EditBtns[12].drawButton();
+
+  // Draw coin balance
+  tft.setCursor(10, 285);
+  tft.setTextColor(HX8357_GREEN);
+  tft.print("Bank: ");
+  tft.print(validCoinAmounts[machineCoinBank]);
+  
 }
 
 /*
@@ -843,6 +959,12 @@ void drawItemMenu(void) {
   tft.setCursor(375, 175);
   tft.print("Qty: ");
   tft.print(item3.count);
+
+  // Draw coin balance
+  tft.setCursor(25, 285);
+  tft.setTextColor(HX8357_GREEN);
+  tft.print("Balance: ");
+  tft.print(validCoinAmounts[coinBalance]);
 }
 
 /*
@@ -853,14 +975,28 @@ void drawItemMenu(void) {
 */
 void drawAcceptCoinMenu(void) {
   tft.fillScreen(HX8357_BLACK); // Clear screen
-  
+
+  // Cancel sale button
+  cnclSaleBtn.initButton(&tft, 430, 290, NUMPAD_BUTTON_W, NUMPAD_BUTTON_H, HX8357_WHITE, cnclSaleBtnColor, HX8357_WHITE, cnclSaleBtnLabel, NUMPAD_BUTTON_TEXTSIZE);
+  cnclSaleBtn.drawButton();
+
   // Draw item 1 price and quantity
   tft.setTextSize(4);
+
+  tft.setTextColor(HX8357_RED);
+  tft.setCursor(15, 50);
+  tft.print("Insuffiecient Funds");
+
   tft.setTextColor(HX8357_CYAN);
-  tft.setCursor(100, 50);
+  tft.setCursor(100, 125);
   tft.print("Enter Coins");
-  tft.setCursor(50, 175);
+
+  tft.setCursor(50, 200);
   tft.print("Amnt Due: ");
+
+  // Draw initial amount due
+  tft.setTextColor(HX8357_GREEN);
+  tft.print(validCoinAmounts[amntDue]);
 }
 
 /*
