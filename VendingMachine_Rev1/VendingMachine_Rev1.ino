@@ -40,40 +40,37 @@ void coinDetected(void);
 
 /****************************************** Classes */
 class IRSensor {
-
     private:
       int irPin = A5;
 
     public:
-      boolean DetectObject(void) {
+      boolean detectObject(void) {
         return analogRead(irPin) > 350;
       }
-      
 };
 
 
 class ItemDispenser {
-  
     private:
         Servo servo;
-
+ 
     public:
-        void AttachPin(int pin) {
+        void attachPin(int pin) {
             servo.attach(pin);
         }
 
-        void StartDispensing(void) {
-            servo.write(180);
+        void startDispensing(void) {
+            servo.write(110);
         }
 
-        void StopDispensing(void) {
+        void stopDispensing(void) {
             servo.write(90);
         }
 };
 
-#define DISPENSER_1_PIN   10
-#define DISPENSER_2_PIN  11
-#define DISPENSER_3_PIN 12
+#define DISPENSER_1_PIN  4
+#define DISPENSER_2_PIN  5
+#define DISPENSER_3_PIN  6 
 
 ItemDispenser dispenser1, dispenser2, dispenser3;
 IRSensor irSensor;
@@ -243,9 +240,9 @@ void setup()
   tft.setRotation(3);
   tft.setTextWrap(false);
 
-  dispenser1.AttachPin(DISPENSER_1_PIN);
-  dispenser2.AttachPin(DISPENSER_2_PIN);
-  dispenser3.AttachPin(DISPENSER_3_PIN);
+  dispenser1.attachPin(DISPENSER_1_PIN);
+  dispenser2.attachPin(DISPENSER_2_PIN);
+  dispenser3.attachPin(DISPENSER_3_PIN);
   attachInterrupt(digitalPinToInterrupt(2), coinDetected, RISING);
 
   //coinBalance = 2;
@@ -279,7 +276,7 @@ void loop()
     case SM_DISPENSE:
       {
         drawDispenseMenu();
-        while (state == SM_ACCEPT_COINS) {
+        while (state == SM_DISPENSE) {
           handleDispenseMenu();
         }
         break;
@@ -393,7 +390,7 @@ void handlePasswordMenu(void) {
    @return void
 */
 void initItems(void) {
-  setItemPrice(1, 3);
+  setItemPrice(1, 1);
   setItemPrice(2, 2);
   setItemPrice(3, 4);
 
@@ -532,7 +529,7 @@ void handleAcceptCoinMenu(void) {
 
     // Update amount due on LCD
     tft.fillRect(300, 185, 200, 55, HX8357_BLACK);
-    tft.setCursor(275, 175);
+    tft.setCursor(275, 190);
     tft.print(validCoinAmounts[amntDue]);
 
     if (amntDue == 0) {
@@ -589,7 +586,7 @@ void coinDetected(void) {
 void handleDispenseMenu(void) {
   if (selectedItem == 1) {
     coinBalance -= item1.price;
-    dispenser1.StartDispensing();
+    dispenser1.startDispensing();
   }
   else if (selectedItem == 2) {
     coinBalance -= item2.price;
@@ -597,6 +594,8 @@ void handleDispenseMenu(void) {
   else if (selectedItem == 3) {
     coinBalance -= item3.price;
   }
+
+  delay(4000);
 
   //TODO: Set servo motor on and wait for IR sensor to trigger
 
