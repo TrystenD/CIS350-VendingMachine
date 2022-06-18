@@ -1,4 +1,5 @@
 /***********************************************************
+<<<<<<< Updated upstream
  * File: VendingMachine_Rev1.ino
  *
  * Authors: Trysten Dembeck, JP, Joel Meyers
@@ -9,6 +10,18 @@
  * Device: Arduino Mega 2560
  *
  * Revision: 1
+=======
+   File: VendingMachine_Rev1.ino
+
+   Authors: Trysten Dembeck, JP Palacios, Joel Meyers
+
+   Description: This program operates the vending machine
+                controller for the CIS350 project.
+
+   Device: Arduino Mega 2560
+
+   Revision: 1
+>>>>>>> Stashed changes
  ***********************************************************/
 
 /****************************************** Library Includes */
@@ -31,6 +44,13 @@ void passwordMessage(const char *msg);
 void initSystem(void);
 void setItemPrice(uint8_t item, uint8_t price);
 void setItemCount(uint8_t item, uint8_t count);
+void detectSonarSensor(void); 
+
+/****************************************** Light Feature */
+#define TRIG_PIN  9
+#define ECHO_PIN 10
+#define LED_PIN  11
+#define SONAR_RANGE 50
 
 /****************************************** Tocuhscreen calibration data */
 #define TS_MINX     10
@@ -170,6 +190,9 @@ Item item1;
 Item item2;
 Item item3;
 
+// Ultrasonic sensor distances
+float durationUs, distanceCm; 
+
 /****************************************** Program Entry */
 void setup()
 {
@@ -181,7 +204,21 @@ void setup()
   tft.setRotation(3);
   tft.setTextWrap(false);
 
+<<<<<<< Updated upstream
   initSystem(); // Init system variables
+=======
+  dispenser1.attachPin(DISPENSER_1_PIN);
+  dispenser2.attachPin(DISPENSER_2_PIN);
+  dispenser3.attachPin(DISPENSER_3_PIN);
+  attachInterrupt(digitalPinToInterrupt(2), coinDetected, RISING);
+
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(LED_PIN, OUTPUT);
+
+  //coinBalance = 2;
+  initItems(); // Init item counts and prices
+>>>>>>> Stashed changes
 }
 
 void loop()
@@ -806,4 +843,32 @@ void waitForUnpress(Adafruit_GFX_Button btn) {
     x = map(p.y, TS_MAXY, TS_MINY, 0, tft.width());  // X flipped to Y
     y = map(p.x, TS_MINX, TS_MAXX, 0, tft.height()); // Y flipped to X
   }
+}
+
+/*
+   @brief  Detects if user is in front of vending machine
+
+   @param  void
+   @return void
+*/
+void detectSonarSensor(void){
+
+  // generate 10-microsecond pulse to TRIG pin
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  // measure duration of pulse from ECHO pin
+  durationUs = pulseIn(ECHO_PIN, HIGH);
+  // calculate the distance
+  distanceCm = 0.017 * durationUs;
+
+  if(distanceCm < SONAR_RANGE){
+     digitalWrite(LED_PIN, HIGH); // turn on LED   
+  }else{
+     digitalWrite(LED_PIN, LOW); // turn off LED   
+  }
+
+  // FIXME: Check if this interferes with the program
+  delay(5000);
 }

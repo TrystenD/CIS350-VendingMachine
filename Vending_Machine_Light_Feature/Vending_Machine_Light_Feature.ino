@@ -10,9 +10,11 @@
 // constants won't change
 const int TRIG_PIN =  6; // Arduino pin connected to Ultrasonic Sensor's TRIG pin
 const int ECHO_PIN =  7; // Arduino pin connected to Ultrasonic Sensor's ECHO pin
+
 const int LED_PIN_1  =  9; // Arduino pin connected to LED's pin 1
 const int LED_PIN_2  = 10; // Arduino pin connected to LED's pin 2
 const int LED_PIN_3  = 11; // Arduino pin connected to LED's pin 3
+
 const int DISTANCE_THRESHOLD = 50; // centimeters
 // variables will change:
 float duration_us, distance_cm;
@@ -39,13 +41,13 @@ void loop() {
 
   if(distance_cm < DISTANCE_THRESHOLD){
      digitalWrite(LED_PIN_1, HIGH); // turn on LED   
-     digitalWrite(LED_PIN_2, HIGH); // turn on LED
-     digitalWrite(LED_PIN_3, HIGH); // turn on LED
+    //  digitalWrite(LED_PIN_2, HIGH); // turn on LED
+    //  digitalWrite(LED_PIN_3, HIGH); // turn on LED
   }
   else{
      digitalWrite(LED_PIN_1, LOW); // turn off LED   
-     digitalWrite(LED_PIN_2, LOW); // turn off LED
-     digitalWrite(LED_PIN_3, LOW); // turn off LED
+    //  digitalWrite(LED_PIN_2, LOW); // turn off LED
+    //  digitalWrite(LED_PIN_3, LOW); // turn off LED
   }
 
   // print the value to Serial Monitor
