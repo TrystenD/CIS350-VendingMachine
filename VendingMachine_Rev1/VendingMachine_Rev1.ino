@@ -38,6 +38,46 @@ void setItemPrice(uint8_t item, uint8_t price);
 void setItemCount(uint8_t item, uint8_t count);
 void coinDetected(void);
 
+/****************************************** Classes */
+class IRSensor {
+
+    private:
+      int irPin = A5;
+
+    public:
+      boolean DetectObject(void) {
+        return analogRead(irPin) > 350;
+      }
+      
+};
+
+
+class ItemDispenser {
+  
+    private:
+        Servo servo;
+
+    public:
+        void AttachPin(int pin) {
+            servo.attach(pin);
+        }
+
+        void StartDispensing(void) {
+            servo.write(180);
+        }
+
+        void StopDispensing(void) {
+            servo.write(90);
+        }
+};
+
+#define DISPENSER_1_PIN   10
+#define DISPENSER_2_PIN  11
+#define DISPENSER_3_PIN 12
+
+ItemDispenser dispenser1, dispenser2, dispenser3;
+IRSensor irSensor;
+
 /****************************************** Tocuhscreen calibration data */
 #define TS_MINX     10
 #define TS_MINY     10
@@ -203,6 +243,9 @@ void setup()
   tft.setRotation(3);
   tft.setTextWrap(false);
 
+  dispenser1.AttachPin(DISPENSER_1_PIN);
+  dispenser2.AttachPin(DISPENSER_2_PIN);
+  dispenser3.AttachPin(DISPENSER_3_PIN);
   attachInterrupt(digitalPinToInterrupt(2), coinDetected, RISING);
 
   //coinBalance = 2;
@@ -237,7 +280,7 @@ void loop()
       {
         drawDispenseMenu();
         while (state == SM_ACCEPT_COINS) {
-          //handleAcceptDispenseMenu();
+          handleDispenseMenu();
         }
         break;
       }
@@ -546,6 +589,7 @@ void coinDetected(void) {
 void handleDispenseMenu(void) {
   if (selectedItem == 1) {
     coinBalance -= item1.price;
+    dispenser1.StartDispensing();
   }
   else if (selectedItem == 2) {
     coinBalance -= item2.price;
@@ -1007,6 +1051,10 @@ void drawAcceptCoinMenu(void) {
 */
 void drawDispenseMenu(void) {
   tft.fillScreen(HX8357_BLACK); // Clear screen
+  tft.setTextSize(4);
+  tft.setTextColor(HX8357_CYAN);
+  tft.setCursor(100, 125);
+  tft.print("Dispensing...");
 }
 
 /*
