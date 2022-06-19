@@ -8,7 +8,10 @@
 
    Device: Arduino Mega 2560
 
-   Revision: 1
+   Revision: 2
+
+   Revision Notes: Updated item dispenser classes and integrated
+                   the lighting system class into the code
  ***********************************************************/
 
 /****************************************** Library Includes */
@@ -39,48 +42,126 @@ void setItemCount(uint8_t item, uint8_t count);
 void coinDetected(void);
 
 /****************************************** Classes */
-class IRSensor {
-    private:
-      int irPin = A5;
-
-    public:
-      boolean detectObject(void) {
-        return analogRead(irPin) > 350;
-      }
-};
-
-
 class ItemDispenser {
+
     private:
-        Servo servo;
- 
+        Servo s;
+        boolean isRunning;
+
     public:
+
+        ItemDispenser() {
+          isRunning = false;
+        }
+
         void attachPin(int pin) {
-            servo.attach(pin);
+            s.attach(pin);
+            stopDispensing();
         }
 
         void startDispensing(void) {
-            servo.write(105);
+            s.write(105);
+            isRunning = true;
         }
 
         void stopDispensing(void) {
-            servo.write(90);
+            s.write(90);
+            isRunning = false;
         }
+
+        boolean checkStatus(void) {
+          return isRunning;
+        }
+};
+
+
+class LightingSystem {
+
+  private:
+    bool isOn;
+    unsigned long startTime;
+    int trigPin;
+    int echoPin;
+    int ledPin;
+
+    bool checkForPerson(void) {
+      digitalWrite(trigPin, LOW);
+      delayMicroseconds(2);
+      digitalWrite(trigPin, HIGH);
+      delayMicroseconds(10);
+      digitalWrite(trigPin, LOW);
+
+      float duration = pulseIn(echoPin, HIGH);
+      float distance = duration * 0.034/2;
+      Serial.println(String(distance) + String(" - ") + String(isOn));
+
+      return distance<75;
+    }
+    
+
+  public:
+    LightingSystem(int trig, int echo, int led) {
+      pinMode(echo, INPUT);
+      pinMode(trig, OUTPUT);
+      pinMode(led, OUTPUT);
+      trigPin = trig;
+      echoPin = echo;
+      ledPin = led;
+
+      startTime = millis();
+      isOn = false;
+      updateLights();
+    }
+
+
+    void updateLights(void) {
+      bool isPerson = checkForPerson();
+      unsigned int timeout = 1 * 60000;
+
+      if (isPerson)
+        turnOnLights();
+        
+      else if (isOn) {
+
+        if ((millis() - 5000) > startTime)
+          turnOffLights();
+   
+      }
+    }
+
+
+    void turnOnLights(void) {
+      startTime = millis();
+
+      digitalWrite(ledPin, HIGH);
+      isOn = true;
+    }
+
+
+    void turnOffLights(void) {
+      digitalWrite(ledPin, LOW);
+      isOn = false;
+    }
 };
 
 #define DISPENSER_1_PIN  4
 #define DISPENSER_2_PIN  5
-#define DISPENSER_3_PIN  6 
+#define DISPENSER_3_PIN  6
+#define IR_PIN           3
 
 ItemDispenser dispenser1, dispenser2, dispenser3;
-IRSensor irSensor;
+
+#define SONAR_TRIG_PIN   13
+#define SONAR_ECHO_PIN   14
+#define LED_PIN          15
+LightingSystem lightSys(SONAR_TRIG_PIN, SONAR_ECHO_PIN, LED_PIN);
 
 /****************************************** Tocuhscreen calibration data */
 #define TS_MINX     10
 #define TS_MINY     10
 #define TS_MAXX     900
 #define TS_MAXY     940
-#define X_PLATE_RES 290  // Measured resistance across X+ and X- plate 
+#define X_PLATE_RES 290  // Measured resistance across X+ and X- plate
 #define MINPRESSURE 5    // Minumum valid pressure
 #define MAXPRESSURE 1000 // Maximum valid pressure
 
@@ -229,6 +310,7 @@ Item item1;
 Item item2;
 Item item3;
 
+
 /****************************************** Program Entry */
 void setup()
 {
@@ -241,11 +323,10 @@ void setup()
   tft.setTextWrap(false);
 
   dispenser1.attachPin(DISPENSER_1_PIN);
-  dispenser1.startDispensing();
-  
   dispenser2.attachPin(DISPENSER_2_PIN);
   dispenser3.attachPin(DISPENSER_3_PIN);
   attachInterrupt(digitalPinToInterrupt(2), coinDetected, RISING);
+  attachInterrupt(digitalPinToInterrupt(IR_PIN), irInterrupt, FALLING);
 
   //coinBalance = 2;
   initItems(); // Init item counts and prices
@@ -263,6 +344,7 @@ void loop()
       {
         drawItemMenu();
         while (state == SM_IDLE) {
+          lightSys.updateLights();
           handleItemMenu();
         }
         break;
@@ -271,6 +353,7 @@ void loop()
       {
         drawAcceptCoinMenu();
         while (state == SM_ACCEPT_COINS) {
+          lightSys.updateLights();
           handleAcceptCoinMenu();
         }
         break;
@@ -279,6 +362,7 @@ void loop()
       {
         drawDispenseMenu();
         while (state == SM_DISPENSE) {
+          lightSys.updateLights();
           handleDispenseMenu();
         }
         break;
@@ -287,6 +371,7 @@ void loop()
       {
         drawPasswordMenu();
         while (state == SM_PASSWORD) {
+          lightSys.updateLights();
           handlePasswordMenu();
         }
         break;
@@ -597,12 +682,11 @@ void handleDispenseMenu(void) {
     coinBalance -= item3.price;
   }
 
-  //delay(4000);
+  delay(4000);
 
   //TODO: Set servo motor on and wait for IR sensor to trigger
 
   state = SM_IDLE;
-  //dispenser1.stopDispensing();
 }
 
 
@@ -1077,4 +1161,20 @@ void waitForUnpress(Adafruit_GFX_Button btn) {
     x = map(p.y, TS_MAXY, TS_MINY, 0, tft.width());  // X flipped to Y
     y = map(p.x, TS_MINX, TS_MAXX, 0, tft.height()); // Y flipped to X
   }
+}
+
+// Function that executes when the IR sensor is triggered by a falling signal
+void irInterrupt(void) {
+  static unsigned long last_iq_time = 0;
+  unsigned long iq_time = millis();
+
+  if (iq_time - last_iq_time > 200) {
+    //Serial.println("Interrupted!");
+    dispenser1.stopDispensing();
+    dispenser2.stopDispensing();
+    dispenser3.stopDispensing();
+  }
+
+  last_iq_time = iq_time;
+ 
 }
