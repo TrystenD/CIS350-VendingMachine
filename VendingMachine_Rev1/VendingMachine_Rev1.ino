@@ -39,41 +39,115 @@ void setItemCount(uint8_t item, uint8_t count);
 void coinDetected(void);
 
 /****************************************** Classes */
-class IRSensor {
-    private:
-      int irPin = A5;
-
-    public:
-      boolean detectObject(void) {
-        return analogRead(irPin) > 350;
-      }
-};
-
-
 class ItemDispenser {
+
     private:
-        Servo servo;
- 
+        Servo s;
+        boolean isRunning;
+
     public:
+
+        Item_Dispenser() {
+          isRunning = false;
+        }
+
         void attachPin(int pin) {
-            servo.attach(pin);
+            s.attach(pin);
+            StopDispensing();
         }
 
         void startDispensing(void) {
-            servo.write(110);
+            s.write(105);
+            isRunning = true;
         }
 
         void stopDispensing(void) {
-            servo.write(90);
+            s.write(90);
+            isRunning = false;
         }
+
+        boolean checkStatus(void) {
+          return isRunning;
+        }
+};
+
+
+class LightingSystem {
+
+  private:
+    bool isOn;
+    unsigned long startTime;
+    int trigPin;
+    int echoPin;
+    int ledPin;
+
+    bool checkForPerson(void) {
+      digitalWrite(trigPin, LOW);
+      delayMicroseconds(2);
+      digitalWrite(trigPin, HIGH);
+      delayMicroseconds(10);
+      digitalWrite(trigPin, LOW);
+
+      float duration = pulseIn(echoPin, HIGH);
+      float distance = duration * 0.034/2;
+      Serial.println(String(distance) + String(" - ") + String(isOn));
+
+      return distance<75;
+    }
+    
+
+  public:
+
+    LightingSystem(int trig, int echo, int led) {
+      pinMode(echo, INPUT);
+      pinMode(trig, OUTPUT);
+      pinMode(led, OUTPUT);
+      trigPin = trig;
+      echoPin = echo;
+      ledPin = led;
+
+      startTime = millis();
+      isOn = false;
+      UpdateLights();
+    }
+
+
+    void updateLights(void) {
+      bool isPerson = checkForPerson();
+      unsigned int timeout = 2 * 60000;
+
+      if (isPerson)
+        turnOnLights();
+        
+      else if (isOn) {
+
+        if (millis() - timeout > startTime)
+          turnOffLights();
+   
+      }
+    }
+
+
+    void turnOnLights(void) {
+      startTime = millis();
+
+      digitalWrite(ledPin, HIGH);
+      isOn = true;
+    }
+
+
+    void turnOffLights(void) {
+      digitalWrite(ledPin, LOW);
+      isOn = false;
+    }
 };
 
 #define DISPENSER_1_PIN  4
 #define DISPENSER_2_PIN  5
-#define DISPENSER_3_PIN  6 
+#define DISPENSER_3_PIN  6
+#define IR_PIN           3
 
 ItemDispenser dispenser1, dispenser2, dispenser3;
-IRSensor irSensor;
 
 /****************************************** Tocuhscreen calibration data */
 #define TS_MINX     10
@@ -229,6 +303,7 @@ Item item1;
 Item item2;
 Item item3;
 
+
 /****************************************** Program Entry */
 void setup()
 {
@@ -244,6 +319,7 @@ void setup()
   dispenser2.attachPin(DISPENSER_2_PIN);
   dispenser3.attachPin(DISPENSER_3_PIN);
   attachInterrupt(digitalPinToInterrupt(2), coinDetected, RISING);
+  attachInterrupt(digitalPinToInterrupt(IR_PIN), irInterrupt, FALLING);
 
   //coinBalance = 2;
   initItems(); // Init item counts and prices
@@ -1074,4 +1150,20 @@ void waitForUnpress(Adafruit_GFX_Button btn) {
     x = map(p.y, TS_MAXY, TS_MINY, 0, tft.width());  // X flipped to Y
     y = map(p.x, TS_MINX, TS_MAXX, 0, tft.height()); // Y flipped to X
   }
+}
+
+// Function that executes when the IR sensor is triggered by a falling signal
+void irInterrupt(void) {
+  static unsigned long last_iq_time = 0;
+  unsigned long iq_time = millis();
+
+  if (iq_time - last_iq_time > 200) {
+    //Serial.println("Interrupted!");
+    dispenser1.StopDispensing();
+    dispenser2.StopDispensing();
+    dispenser3.StopDispensing();
+  }
+
+  last_iq_time = iq_time;
+ 
 }
