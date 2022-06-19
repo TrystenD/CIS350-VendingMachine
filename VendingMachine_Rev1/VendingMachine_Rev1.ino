@@ -68,7 +68,7 @@ class ItemDispenser {
         }
 };
 
-#define DISPENSER_1_PIN  3
+#define DISPENSER_1_PIN  4
 #define DISPENSER_2_PIN  5
 #define DISPENSER_3_PIN  6 
 
