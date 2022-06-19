@@ -60,7 +60,7 @@ class ItemDispenser {
         }
 
         void startDispensing(void) {
-            servo.write(110);
+            servo.write(105);
         }
 
         void stopDispensing(void) {
@@ -68,7 +68,7 @@ class ItemDispenser {
         }
 };
 
-#define DISPENSER_1_PIN  4
+#define DISPENSER_1_PIN  3
 #define DISPENSER_2_PIN  5
 #define DISPENSER_3_PIN  6 
 
@@ -80,7 +80,7 @@ IRSensor irSensor;
 #define TS_MINY     10
 #define TS_MAXX     900
 #define TS_MAXY     940
-#define X_PLATE_RES 290  // Measured resistance across X+ and X- plate
+#define X_PLATE_RES 290  // Measured resistance across X+ and X- plate 
 #define MINPRESSURE 5    // Minumum valid pressure
 #define MAXPRESSURE 1000 // Maximum valid pressure
 
@@ -241,6 +241,8 @@ void setup()
   tft.setTextWrap(false);
 
   dispenser1.attachPin(DISPENSER_1_PIN);
+  dispenser1.startDispensing();
+  
   dispenser2.attachPin(DISPENSER_2_PIN);
   dispenser3.attachPin(DISPENSER_3_PIN);
   attachInterrupt(digitalPinToInterrupt(2), coinDetected, RISING);
@@ -595,11 +597,12 @@ void handleDispenseMenu(void) {
     coinBalance -= item3.price;
   }
 
-  delay(4000);
+  //delay(4000);
 
   //TODO: Set servo motor on and wait for IR sensor to trigger
 
   state = SM_IDLE;
+  //dispenser1.stopDispensing();
 }
 
 
