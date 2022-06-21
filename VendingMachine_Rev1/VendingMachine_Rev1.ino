@@ -40,6 +40,20 @@ void initItems(void);
 void setItemPrice(uint8_t item, uint8_t price);
 void setItemCount(uint8_t item, uint8_t count);
 void coinDetected(void);
+void irInterrupt(void);
+
+
+void timerInit(void) {
+  cli();
+  TCCR2A = 0;                 // Reset entire TCCR1A to 0 
+  TCCR2B = 0;                 // Reset entire TCCR1B to 0
+  TCCR2B |= B00000111;        //Set CS20, CS21 and CS22 to 1 so we get prescalar 1024  
+  TIMSK2 |= B00000100;        //Set OCIE1B to 1 so we enable compare match B
+  OCR2B = 127;  
+  sei();
+}
+
+bool LED_STATE1 = true;
 
 /****************************************** Classes */
 class ItemDispenser {
@@ -93,7 +107,7 @@ class LightingSystem {
 
       float duration = pulseIn(echoPin, HIGH);
       float distance = duration * 0.034/2;
-      Serial.println(String(distance) + String(" - ") + String(isOn));
+      //Serial.println(String(distance) + String(" - ") + String(isOn));
 
       return distance<75;
     }
@@ -116,14 +130,14 @@ class LightingSystem {
 
     void updateLights(void) {
       bool isPerson = checkForPerson();
-      unsigned int timeout = 1 * 60000;
+      unsigned int timeout = 0.2 * 60000;
 
       if (isPerson)
         turnOnLights();
         
       else if (isOn) {
 
-        if ((millis() - 5000) > startTime)
+        if ((millis() - startTime) > timeout)
           turnOffLights();
    
       }
@@ -322,11 +336,15 @@ void setup()
   tft.setRotation(3);
   tft.setTextWrap(false);
 
+  //pinMode(32, OUTPUT);
+
   dispenser1.attachPin(DISPENSER_1_PIN);
   dispenser2.attachPin(DISPENSER_2_PIN);
   dispenser3.attachPin(DISPENSER_3_PIN);
   attachInterrupt(digitalPinToInterrupt(2), coinDetected, RISING);
   attachInterrupt(digitalPinToInterrupt(IR_PIN), irInterrupt, FALLING);
+
+  //timerInit();
 
   //coinBalance = 2;
   initItems(); // Init item counts and prices
@@ -390,6 +408,11 @@ void loop()
       }
   } // end switch
 } // end loop()
+
+//ISR(TIMER2_COMPB_vect){                               
+//  LED_STATE1 = !LED_STATE1;    //Invert LED state
+//  digitalWrite(32,LED_STATE1);  //Write new state to the LED on pin D5
+//}
 
 /****************************************** Function Definitions */
 
@@ -1167,9 +1190,8 @@ void waitForUnpress(Adafruit_GFX_Button btn) {
 void irInterrupt(void) {
   static unsigned long last_iq_time = 0;
   unsigned long iq_time = millis();
-
-  if (iq_time - last_iq_time > 200) {
-    //Serial.println("Interrupted!");
+  if ((iq_time - last_iq_time) > 800) {
+    Serial.println("Debounced");
     dispenser1.stopDispensing();
     dispenser2.stopDispensing();
     dispenser3.stopDispensing();
