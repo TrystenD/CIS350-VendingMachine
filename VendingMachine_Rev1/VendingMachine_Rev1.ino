@@ -1,27 +1,17 @@
 /***********************************************************
-<<<<<<< Updated upstream
- * File: VendingMachine_Rev1.ino
- *
- * Authors: Trysten Dembeck, JP, Joel Meyers
- *
- * Description: This program operates the vending machine
- *              controller for the CIS350 project.
- *
- * Device: Arduino Mega 2560
- *
- * Revision: 1
-=======
    File: VendingMachine_Rev1.ino
 
-   Authors: Trysten Dembeck, JP Palacios, Joel Meyers
+   Authors: Trysten Dembeck, JP, Joel Meyers
 
    Description: This program operates the vending machine
                 controller for the CIS350 project.
 
    Device: Arduino Mega 2560
 
-   Revision: 1
->>>>>>> Stashed changes
+   Revision: 2
+
+   Revision Notes: Updated item dispenser classes and integrated
+                   the lighting system class into the code
  ***********************************************************/
 
 /****************************************** Library Includes */
@@ -31,26 +21,154 @@
 #include "Adafruit_HX8357.h"
 #include "TouchScreen.h"
 #include "string.h"
+#include "Arduino.h"
 
 /****************************************** Function Prototypes */
 void handleItemMenu();
 void waitForUnpress(Adafruit_GFX_Button btn);
 void drawItemMenu(void);
 void drawPasswordMenu(void);
+void drawAcceptCoinMenu(void);
+void drawDispenseMenu(void);
+void handleAcceptCoinMenu(void);
+void handleDispenseMenu(void);
 void handleItemMenu(void);
 void handlePasswordMenu(void);
 void clearPasswordpswdTextfield(void);
 void passwordMessage(const char *msg);
-void initSystem(void);
+void initItems(void);
 void setItemPrice(uint8_t item, uint8_t price);
 void setItemCount(uint8_t item, uint8_t count);
-void detectSonarSensor(void); 
+void coinDetected(void);
+void irInterrupt(void);
 
-/****************************************** Light Feature */
-#define TRIG_PIN  9
-#define ECHO_PIN 10
-#define LED_PIN  11
-#define SONAR_RANGE 50
+
+void timerInit(void) {
+  cli();
+  TCCR2A = 0;                 // Reset entire TCCR1A to 0 
+  TCCR2B = 0;                 // Reset entire TCCR1B to 0
+  TCCR2B |= B00000111;        //Set CS20, CS21 and CS22 to 1 so we get prescalar 1024  
+  TIMSK2 |= B00000100;        //Set OCIE1B to 1 so we enable compare match B
+  OCR2B = 127;  
+  sei();
+}
+
+bool LED_STATE1 = true;
+
+/****************************************** Classes */
+class ItemDispenser {
+
+    private:
+        Servo s;
+        boolean isRunning;
+
+    public:
+
+        ItemDispenser() {
+          isRunning = false;
+        }
+
+        void attachPin(int pin) {
+            s.attach(pin);
+            stopDispensing();
+        }
+
+        void startDispensing(void) {
+            s.write(105);
+            isRunning = true;
+        }
+
+        void stopDispensing(void) {
+            s.write(90);
+            isRunning = false;
+        }
+
+        boolean checkStatus(void) {
+          return isRunning;
+        }
+};
+
+
+class LightingSystem {
+
+  private:
+    bool isOn;
+    unsigned long startTime;
+    int trigPin;
+    int echoPin;
+    int ledPin;
+
+    bool checkForPerson(void) {
+      digitalWrite(trigPin, LOW);
+      delayMicroseconds(2);
+      digitalWrite(trigPin, HIGH);
+      delayMicroseconds(10);
+      digitalWrite(trigPin, LOW);
+
+      float duration = pulseIn(echoPin, HIGH);
+      float distance = duration * 0.034/2;
+      //Serial.println(String(distance) + String(" - ") + String(isOn));
+
+      return distance<75;
+    }
+    
+
+  public:
+    LightingSystem(int trig, int echo, int led) {
+      pinMode(echo, INPUT);
+      pinMode(trig, OUTPUT);
+      pinMode(led, OUTPUT);
+      trigPin = trig;
+      echoPin = echo;
+      ledPin = led;
+
+      startTime = millis();
+      isOn = false;
+      updateLights();
+    }
+
+
+    void updateLights(void) {
+      bool isPerson = checkForPerson();
+      unsigned int timeout = 0.2 * 60000;
+
+      if (isPerson)
+        turnOnLights();
+        
+      else if (isOn) {
+
+        if ((millis() - startTime) > timeout)
+          turnOffLights();
+   
+      }
+    }
+
+
+    void turnOnLights(void) {
+      startTime = millis();
+
+      digitalWrite(ledPin, HIGH);
+      isOn = true;
+    }
+
+
+    void turnOffLights(void) {
+      digitalWrite(ledPin, LOW);
+      isOn = false;
+    }
+};
+
+#define DISPENSER_1_PIN  4
+#define DISPENSER_2_PIN  5
+#define DISPENSER_3_PIN  6
+#define IR_PIN           3
+
+ItemDispenser dispenser1, dispenser2, dispenser3;
+
+#define SONAR_TRIG_PIN   13
+#define SONAR_ECHO_PIN   14
+#define LED_PIN          15
+LightingSystem lightSys(SONAR_TRIG_PIN, SONAR_ECHO_PIN, LED_PIN);
 
 /****************************************** Tocuhscreen calibration data */
 #define TS_MINX     10
@@ -165,20 +283,36 @@ uint16_t EditBtnColors[EDIT_BTNS_CNT] = {HX8357_DARKGREEN, HX8357_MAROON, HX8357
                                          HX8357_DARKGREY
                                         };
 
+/****************************************** Accept Coins Menu Configuration */
+Adafruit_GFX_Button cnclSaleBtn;
+char cnclSaleBtnLabel[5] = "Cncl";
+uint16_t cnclSaleBtnColor = {HX8357_MAROON};
+
 
 /****************************************** System Global Variables and Structures */
 #define MAX_ITEM_COUNT 3
 const char OWNER_PASSWORD[TEXT_LEN + 1] = "3251"; // Owner password (4 chars)
 
-uint8_t state = SM_IDLE; // State machine control variable
-uint8_t coinBalance = 0; // User's current coin balance
+uint8_t state = SM_IDLE;                  // State machine control variable
 
-const char validCoinAmounts[4][6] = {
-  "$0.25",
-  "$0.50",
-  "$0.75",
-  "$1.00"
+const char validCoinAmounts[21][6] = {            // Valid coin amounts (up to $5.00)
+  "$0.00", "$0.25", "$0.50", "$0.75",
+  "$1.00", "$1.25", "$1.50", "$1.75",
+  "$2.00", "$2.25", "$2.50", "$2.75",
+  "$3.00", "$3.25", "$3.50", "$3.75",
+  "$4.00", "$4.25", "$4.50", "$4.75",
+  "$5.00",
 };
+
+int widthCount = 0;   // Time width of coin acceptor pulse
+int impulseCount = 0; // Flag to indicate a coin was accepted
+
+
+// Monetary counters
+uint8_t machineCoinBank = 0; // Total number of coins in machine
+uint8_t coinBalance = 0;     // User's current coin balance
+uint8_t amntDue = 0;         // Amount due by user
+uint8_t selectedItem = 0;    // The item selected by user
 
 struct Item {
   uint8_t price;    // Price in number of quarters (1-4)
@@ -190,35 +324,30 @@ Item item1;
 Item item2;
 Item item3;
 
-// Ultrasonic sensor distances
-float durationUs, distanceCm; 
 
 /****************************************** Program Entry */
 void setup()
 {
   Serial.begin(115200);
+  //  tft.begin();
+  //  tft.fillScreen(HX8357_BLACK);
   tft.begin();
   tft.fillScreen(HX8357_BLACK);
-
-  tft.begin();
   tft.setRotation(3);
   tft.setTextWrap(false);
 
-<<<<<<< Updated upstream
-  initSystem(); // Init system variables
-=======
+  //pinMode(32, OUTPUT);
+
   dispenser1.attachPin(DISPENSER_1_PIN);
   dispenser2.attachPin(DISPENSER_2_PIN);
   dispenser3.attachPin(DISPENSER_3_PIN);
   attachInterrupt(digitalPinToInterrupt(2), coinDetected, RISING);
+  attachInterrupt(digitalPinToInterrupt(IR_PIN), irInterrupt, FALLING);
 
-  pinMode(TRIG_PIN, OUTPUT);
-  pinMode(ECHO_PIN, INPUT);
-  pinMode(LED_PIN, OUTPUT);
+  //timerInit();
 
   //coinBalance = 2;
   initItems(); // Init item counts and prices
->>>>>>> Stashed changes
 }
 
 void loop()
@@ -233,22 +362,34 @@ void loop()
       {
         drawItemMenu();
         while (state == SM_IDLE) {
+          lightSys.updateLights();
           handleItemMenu();
         }
         break;
       }
     case SM_ACCEPT_COINS:
       {
+        drawAcceptCoinMenu();
+        while (state == SM_ACCEPT_COINS) {
+          lightSys.updateLights();
+          handleAcceptCoinMenu();
+        }
         break;
       }
     case SM_DISPENSE:
       {
+        drawDispenseMenu();
+        while (state == SM_DISPENSE) {
+          lightSys.updateLights();
+          handleDispenseMenu();
+        }
         break;
       }
     case SM_PASSWORD:
       {
         drawPasswordMenu();
         while (state == SM_PASSWORD) {
+          lightSys.updateLights();
           handlePasswordMenu();
         }
         break;
@@ -265,18 +406,23 @@ void loop()
       {
         break;
       }
-  }
-}
+  } // end switch
+} // end loop()
+
+//ISR(TIMER2_COMPB_vect){                               
+//  LED_STATE1 = !LED_STATE1;    //Invert LED state
+//  digitalWrite(32,LED_STATE1);  //Write new state to the LED on pin D5
+//}
 
 /****************************************** Function Definitions */
 
 /*
- * @brief  This function handles the inputs and UI outputs of the
- *         password menu.
- *        
- * @param  None
- * @return void
- */
+   @brief  This function handles the inputs and UI outputs of the
+           password menu.
+
+   @param  None
+   @return void
+*/
 void handlePasswordMenu(void) {
   int x;
   int y;
@@ -337,23 +483,23 @@ void handlePasswordMenu(void) {
           tft.setTextColor(TEXT_COLOR, HX8357_BLACK);
           tft.setTextSize(TEXT_SIZE);
           tft.print(pswdTextfield);
-          
+
           delay(100); // UI debouncing
-        }
-      }
-    }
-  }
+        } // end if
+      } // end if
+    } // end for
+  } // end if
 }
 
 
 /*
- * @brief  This function initalizes system variables such
- *         as the item counts and prices.
- *        
- * @param  None
- * @return void
- */
-void initSystem(void) {
+   @brief  This function initalizes system variables such
+           as the item counts and prices.
+
+   @param  None
+   @return void
+*/
+void initItems(void) {
   setItemPrice(1, 1);
   setItemPrice(2, 2);
   setItemPrice(3, 4);
@@ -365,74 +511,74 @@ void initSystem(void) {
 
 
 /*
- * @brief  Setter for the item prices. Validates the selected item
- *         and desired price before setting it.
- *        
- * @param  uint8_t item: The item (1-3) to set the price of
- * @param  uint8_t coins: The number of coins required to purchase item (1-4)
- * 
- * @return void
- */
+   @brief  Setter for the item prices. Validates the selected item
+           and desired price before setting it.
+
+   @param  uint8_t item: The item (1-3) to set the price of
+   @param  uint8_t coins: The number of coins required to purchase item (1-4)
+
+   @return void
+*/
 void setItemPrice(uint8_t item, uint8_t coins) {
   if (((coins >= 1) && (coins <= 4)) && ((item >= 1) && item <= 3)) {
     switch (item) {
       case 1:
-          item1.price = coins;                                 // Set # of coins required
-          strcpy(item1.priceStr, validCoinAmounts[coins - 1]); // Set corresponding $ value
-          break;
+        item1.price = coins;                                 // Set # of coins required
+        strcpy(item1.priceStr, validCoinAmounts[coins]); // Set corresponding string $ value
+        break;
 
       case 2:
-          item2.price = coins;
-          strcpy(item2.priceStr, validCoinAmounts[coins - 1]);
+        item2.price = coins;
+        strcpy(item2.priceStr, validCoinAmounts[coins]);
 
-          break;
+        break;
       case 3:
-          item3.price = coins;
-          strcpy(item3.priceStr, validCoinAmounts[coins - 1]);
+        item3.price = coins;
+        strcpy(item3.priceStr, validCoinAmounts[coins]);
 
-          break;
-          
+        break;
+
       default:
-          Serial.println("Invalid Item. Must be between 1 and 3 inclusive.");
-          break;
-    }
-  }
+        Serial.println("Invalid Item. Must be between 1 and 3 inclusive.");
+        break;
+    } // end switch
+  } // end if
   else {
-    Serial.println("Invalid Price. Must be between 1 and 4 inclusive.");
+    Serial.println("Invalid Price. Must be between 1 and 4 coins inclusive.");
   }
 }
 
 
 /*
- * @brief  Setter for the item stock. Validates the selected item
- *         and desired stock before setting it.
- *        
- * @param  uint8_t item: The item (1-3) to set the stock of
- * @param  uint8_t count: The number of items to set as the machine's stock (1-MAX_MACRO)
- * 
- * @return void
- */
+   @brief  Setter for the item stock. Validates the selected item
+           and desired stock before setting it.
+
+   @param  uint8_t item: The item (1-3) to set the stock of
+   @param  uint8_t count: The number of items to set as the machine's stock (1-MAX_MACRO)
+
+   @return void
+*/
 void setItemCount(uint8_t item, uint8_t count) {
   if (((count >= 0) && (count <= MAX_ITEM_COUNT)) && ((item >= 1) && item <= 3)) {
     switch (item) {
       case 1:
-          item1.count = count;
-          break;
-          
+        item1.count = count;
+        break;
+
       case 2:
-          item2.count = count;
-          break;
-          
+        item2.count = count;
+        break;
+
       case 3:
-          item3.count = count;
-          break;
+        item3.count = count;
+        break;
 
       default:
-          Serial.println("Invalid Item. Must be between 1 and 3 inclusive.");
-          break;
-        
-    }
-  }
+        Serial.println("Invalid Item. Must be between 1 and 3 inclusive.");
+        break;
+
+    } // end switch
+  } // end if
   else {
     Serial.print("Invalid Count. Must be between 0 and "); Serial.print(MAX_ITEM_COUNT); Serial.println(" inclusive.");
   }
@@ -440,12 +586,12 @@ void setItemCount(uint8_t item, uint8_t count) {
 
 
 /*
- * @brief  Clears the password textfield so entered
- *         value is not saved by program.
- *        
- * @param  None
- * @return void
- */
+   @brief  Clears the password textfield so entered
+           value is not saved by program.
+
+   @param  None
+   @return void
+*/
 void clearPasswordTextfield(void) {
   for (uint8_t i = 0; i < 4; i++) {
     pswdTextfield[i] = ' ';         // Replace each character with a space
@@ -454,13 +600,13 @@ void clearPasswordTextfield(void) {
 }
 
 /*
- * @brief  Helper to display a message in the password menu.
- *         Used to display "Correct" or "Incorrect" when the
- *         password is entered by the user (under enter btn).
- *        
- * @param  const char *msg: Constant string message to display.
- * @return void
- */
+   @brief  Helper to display a message in the password menu.
+           Used to display "Correct" or "Incorrect" when the
+           password is entered by the user (under enter btn).
+
+   @param  const char *msg: Constant string message to display.
+   @return void
+*/
 void passwordMessage(const char *msg) {
   tft.fillRect(PASSWORD_MSG_X, PASSWORD_MSG_Y, 200, 16, HX8357_BLACK);
   tft.setCursor(PASSWORD_MSG_X, PASSWORD_MSG_Y);
@@ -470,19 +616,38 @@ void passwordMessage(const char *msg) {
 }
 
 /*
- * @brief  Handles the inputs and UI outputs within the select-item menu.
- *         This menu allows the user to select which item to purchase or 
- *         to enter maintenence mode.
- *        
- * @param  void
- * @return void
- */
-void handleItemMenu(void) {
+   @brief  Handles the inputs and UI outputs within the accept coins menu.
+           This menu accepts coins from the user and indicates
+           their amount due.
+
+   @param  void
+   @return void
+*/
+void handleAcceptCoinMenu(void) {
   int x;
   int y;
   TSPoint p;
 
-  // Retreive point from touchscren
+  /** Check for coin inputs */
+  widthCount += 1;
+
+  if (widthCount >= 30 and impulseCount == 1) {   // Check if coin was valid and accepted
+    impulseCount = 0;                             // Reset impulse flag
+    coinBalance += 1;                             // Increase users balance
+    machineCoinBank+= 1;
+    amntDue -= 1;                                 // Decrease amount due
+
+    // Update amount due on LCD
+    tft.fillRect(300, 185, 200, 55, HX8357_BLACK);
+    tft.setCursor(275, 190);
+    tft.print(validCoinAmounts[amntDue]);
+
+    if (amntDue == 0) {
+      state = SM_DISPENSE;
+    }
+  }
+
+  /** Check for cancel button input */
   p = ts.getPoint();
   x = map(p.y, TS_MAXY, TS_MINY, 0, tft.width());  // X flipped to Y
   y = map(p.x, TS_MINX, TS_MAXX, 0, tft.height()); // Y flipped to X
@@ -490,47 +655,167 @@ void handleItemMenu(void) {
   // Valid press on screen if within valid pressure range
   if (p.z >= MINPRESSURE && p.z <= MAXPRESSURE) {
 
-    for (uint8_t b = 0; b < 5; b++) {         // Loop through each button to see if it was pressed
+    if (cnclSaleBtn.contains(x, y)) {
+      cnclSaleBtn.press(true);          // Tell button that it was pressed
+
+      if (cnclSaleBtn.justPressed()) {
+        cnclSaleBtn.drawButton(true);   // Draw inverted button colors
+        waitForUnpress(cnclSaleBtn);    // Wait for user to let go of the button (blocking)
+        cnclSaleBtn.press(false);       // Tell button it is no longer pressed
+        cnclSaleBtn.drawButton(false);  // Draw button normally
+
+        // Cancel Sale Activities
+        amntDue = 0;
+        state = SM_IDLE;
+
+      } // end if
+    } // end if contains()
+  } // end if
+}
+
+/*
+   @brief  Interrupt handler for when a signal is received from the coin
+           acceptor (coin was inserted and accepted).
+
+   @param  void
+   @return void
+*/
+void coinDetected(void) {
+  impulseCount += 1;
+  widthCount = 0;
+}
+
+
+/*
+   @brief  Handles the inputs and UI outputs within the item dispense menu.
+           This menu shows that an item is dispensing and thanks the user.
+
+   @param  void
+   @return void
+*/
+void handleDispenseMenu(void) {
+  if (selectedItem == 1) {
+    coinBalance -= item1.price;
+    dispenser1.startDispensing();
+  }
+  else if (selectedItem == 2) {
+    coinBalance -= item2.price;
+  }
+  else if (selectedItem == 3) {
+    coinBalance -= item3.price;
+  }
+
+  delay(4000);
+
+  //TODO: Set servo motor on and wait for IR sensor to trigger
+
+  state = SM_IDLE;
+}
+
+
+/*
+   @brief  Handles the inputs and UI outputs within the select-item menu.
+           This menu allows the user to select which item to purchase or
+           to enter maintenence mode.
+
+   @param  void
+   @return void
+*/
+void handleItemMenu(void) {
+  int x;
+  int y;
+  TSPoint p;
+
+  /** Check for coin inputs */
+  widthCount += 1;
+
+  if (widthCount >= 30 and impulseCount == 1) {   // Check if coin was valid and accepted
+    impulseCount = 0;                             // Reset impulse flag
+    coinBalance += 1;                             // Increase users balance
+    machineCoinBank += 1;
+
+    // Update coin balance on LCD
+    tft.fillRect(0, 270, 200, 150, HX8357_BLACK);
+    tft.setCursor(25, 285);
+    tft.setTextColor(HX8357_GREEN);
+    tft.print("Balance: ");
+    tft.print(validCoinAmounts[coinBalance]);
+  }
+
+  /** Check for LCD screen input */
+  p = ts.getPoint();
+  x = map(p.y, TS_MAXY, TS_MINY, 0, tft.width());  // X flipped to Y
+  y = map(p.x, TS_MINX, TS_MAXX, 0, tft.height()); // Y flipped to X
+
+  // Valid press on screen if within valid pressure range
+  if (p.z >= MINPRESSURE && p.z <= MAXPRESSURE) {
+
+    for (uint8_t b = 0; b < 5; b++) {              // Loop through each button to see if it was pressed
       if (ItemMenuBtns[b].contains(x, y)) {
-        ItemMenuBtns[b].press(true);          // Tell a button that it was pressed
+        ItemMenuBtns[b].press(true);               // Tell a button that it was pressed
 
         if (ItemMenuBtns[b].justPressed()) {
-          ItemMenuBtns[b].drawButton(true);   // Draw inverted button colors
-          waitForUnpress(ItemMenuBtns[b]);    // Wait for user to let go of the button
-          ItemMenuBtns[b].press(false);       // Tell button it is no longer pressed
-          ItemMenuBtns[b].drawButton(false);  // Draw button normally
+          ItemMenuBtns[b].drawButton(true);        // Draw inverted button colors
+          waitForUnpress(ItemMenuBtns[b]);         // Wait for user to let go of the button (blocking)
+          ItemMenuBtns[b].press(false);            // Tell button it is no longer pressed
+          ItemMenuBtns[b].drawButton(false);       // Draw button normally
 
           // Item 1 selected
-          if (b == 0) {
-            
+          if (b == 0 && item1.count > 0) {
+            selectedItem = 1;
+
+            if (coinBalance >= item1.price) {      // User's balance covers item cost
+              state = SM_DISPENSE;                 // Dispense item
+            }
+            else {                                 // User's balance is less than item cost
+              amntDue = item1.price - coinBalance; // Calc amount due
+              state = SM_ACCEPT_COINS;             // Get remaining cost from user
+            }
           }
           // Item 2 selected
-          if (b == 1) {
+          if (b == 1 && item2.count > 0) {
+            selectedItem = 2;
 
+            if (coinBalance >= item2.price) {      // User's balance covers item cost
+              state = SM_DISPENSE;                 // Dispense item
+            }
+            else {                                 // User's balance is less than item cost
+              amntDue = item2.price - coinBalance; // Calc amount due
+              state = SM_ACCEPT_COINS;             // Get remaining cost from user
+            }
           }
           // Item 3 selected
-          if (b == 2) {
-            
+          if (b == 2 && item3.count > 0) {
+            selectedItem = 3;
+
+            if (coinBalance >= item3.price) {      // User's balance covers item cost
+              state = SM_DISPENSE;                 // Dispense item
+            }
+            else {                                 // User's balance is less than item cost
+              amntDue = item3.price - coinBalance; // Calc amount due
+              state = SM_ACCEPT_COINS;             // Get remaining cost from user
+            }
           }
           // Settings button pressed
           if (b == 3) {
             state = SM_PASSWORD;
           }
-        }
-      }
-    }
-  }
+        } // end if
+      } // end if contains()
+    } // end for
+  } // end if
 }
 
 
+
 /*
- * @brief  Handles the inputs and UI outputs within the set-item menu.
- *         This menu allows the user to increase or decrease the stock
- *         of the items in the machine and their prices.
- *        
- * @param  void
- * @return void
- */
+   @brief  Handles the inputs and UI outputs within the set-item menu.
+           This menu allows the user to increase or decrease the stock
+           of the items in the machine and their prices.
+
+   @param  void
+   @return void
+*/
 void handleSetItemMenu(void) {
   int x;
   int y;
@@ -541,8 +826,7 @@ void handleSetItemMenu(void) {
   x = map(p.y, TS_MAXY, TS_MINY, 0, tft.width());  // X flipped to Y
   y = map(p.x, TS_MINX, TS_MAXX, 0, tft.height()); // Y flipped to X
 
-  if (p.z >= MINPRESSURE && p.z <= MAXPRESSURE)
-  {
+  if (p.z >= MINPRESSURE && p.z <= MAXPRESSURE) {
     for (uint8_t b = 0; b < 13; b++) {
       if (EditBtns[b].contains(x, y)) {
         EditBtns[b].press(true);          // Tell the button it is pressed
@@ -566,7 +850,7 @@ void handleSetItemMenu(void) {
           else if (b == 3) {
             setItemPrice(1, item1.price - 1);
           }
-          
+
           // Item 2
           else if (b == 4) {
             setItemCount(2, item2.count + 1);
@@ -580,7 +864,7 @@ void handleSetItemMenu(void) {
           else if (b == 7) {
             setItemPrice(2, item2.price - 1);
           }
-          
+
           // Item 3
           else if (b == 8) {
             setItemCount(3, item3.count + 1);
@@ -616,20 +900,20 @@ void handleSetItemMenu(void) {
           tft.print(item3.priceStr);
 
           delay(100); // UI debouncing
-        }
-      }
-    }
-  }
+        } // end if
+      } // end if contains()
+    } // end for
+  } // end if
 }
 
 
 /*
- * @brief  This function draws all of the UI elements for the set-item
- *         menu (maintenence menu).
- *        
- * @param  void
- * @return void
- */
+   @brief  This function draws all of the UI elements for the set-item
+           menu (maintenence menu).
+
+   @param  void
+   @return void
+*/
 void drawSetItemMenu(void) {
   tft.fillScreen(HX8357_BLACK);   // Clear screen
   tft.setTextColor(HX8357_WHITE); // Text color is white
@@ -735,18 +1019,24 @@ void drawSetItemMenu(void) {
   EditBtns[11].initButton(&tft, 435, 175, EDIT_BUTTON_W, EDIT_BUTTON_W, HX8357_WHITE, EditBtnColors[11], HX8357_WHITE, EditBtnLabels[11], 2);
   EditBtns[11].drawButton();
 
-
   /** DONE BUTTON */
-  EditBtns[12].initButton(&tft, 240, 285, 450, 50, HX8357_WHITE, EditBtnColors[12], HX8357_WHITE, EditBtnLabels[12], 2);
+  EditBtns[12].initButton(&tft, 350, 285, 250, 50, HX8357_WHITE, EditBtnColors[12], HX8357_WHITE, EditBtnLabels[12], 2);
   EditBtns[12].drawButton();
+
+  // Draw coin balance
+  tft.setCursor(10, 285);
+  tft.setTextColor(HX8357_GREEN);
+  tft.print("Bank: ");
+  tft.print(validCoinAmounts[machineCoinBank]);
+  
 }
 
 /*
- * @brief  This function draws all of the UI elements for the password menu.
- *        
- * @param  void
- * @return void
- */
+   @brief  This function draws all of the UI elements for the password menu.
+
+   @param  void
+   @return void
+*/
 void drawPasswordMenu(void) {
   tft.fillScreen(HX8357_BLACK); // Clear screen
 
@@ -778,11 +1068,11 @@ void drawPasswordMenu(void) {
 }
 
 /*
- * @brief  This function draws all of the UI elements for the select-item menu.
- *        
- * @param  void
- * @return void
- */
+   @brief  This function draws all of the UI elements for the select-item menu.
+
+   @param  void
+   @return void
+*/
 void drawItemMenu(void) {
   tft.fillScreen(HX8357_BLACK); // Clear screen
 
@@ -822,16 +1112,67 @@ void drawItemMenu(void) {
   tft.setCursor(375, 175);
   tft.print("Qty: ");
   tft.print(item3.count);
+
+  // Draw coin balance
+  tft.setCursor(25, 285);
+  tft.setTextColor(HX8357_GREEN);
+  tft.print("Balance: ");
+  tft.print(validCoinAmounts[coinBalance]);
 }
 
+/*
+   @brief  Draws the menu on the LCD for accepting coins from the user.
+
+   @param  void
+   @return void
+*/
+void drawAcceptCoinMenu(void) {
+  tft.fillScreen(HX8357_BLACK); // Clear screen
+
+  // Cancel sale button
+  cnclSaleBtn.initButton(&tft, 430, 290, NUMPAD_BUTTON_W, NUMPAD_BUTTON_H, HX8357_WHITE, cnclSaleBtnColor, HX8357_WHITE, cnclSaleBtnLabel, NUMPAD_BUTTON_TEXTSIZE);
+  cnclSaleBtn.drawButton();
+
+  // Draw item 1 price and quantity
+  tft.setTextSize(4);
+
+  tft.setTextColor(HX8357_RED);
+  tft.setCursor(15, 50);
+  tft.print("Insuffiecient Funds");
+
+  tft.setTextColor(HX8357_CYAN);
+  tft.setCursor(100, 125);
+  tft.print("Enter Coins");
+
+  tft.setCursor(50, 200);
+  tft.print("Amnt Due: ");
+
+  // Draw initial amount due
+  tft.setTextColor(HX8357_GREEN);
+  tft.print(validCoinAmounts[amntDue]);
+}
 
 /*
- * @brief  Blocking function that waits until a user lets go
- *         of the passed button.
- *        
- * @param  Adafruit_GFX_Button btn: The button to wait for a release.
- * @return void
- */
+   @brief  Draws the menu on the LCD for dispensing an item.
+
+   @param  void
+   @return void
+*/
+void drawDispenseMenu(void) {
+  tft.fillScreen(HX8357_BLACK); // Clear screen
+  tft.setTextSize(4);
+  tft.setTextColor(HX8357_CYAN);
+  tft.setCursor(100, 125);
+  tft.print("Dispensing...");
+}
+
+/*
+   @brief  Blocking function that waits until a user lets go
+           of the passed button.
+
+   @param  Adafruit_GFX_Button btn: The button to wait for a release.
+   @return void
+*/
 void waitForUnpress(Adafruit_GFX_Button btn) {
   TSPoint p = ts.getPoint();
   int x = map(p.y, TS_MAXY, TS_MINY, 0, tft.width());  // X flipped to Y
@@ -845,30 +1186,17 @@ void waitForUnpress(Adafruit_GFX_Button btn) {
   }
 }
 
-/*
-   @brief  Detects if user is in front of vending machine
-
-   @param  void
-   @return void
-*/
-void detectSonarSensor(void){
-
-  // generate 10-microsecond pulse to TRIG pin
-  digitalWrite(TRIG_PIN, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(TRIG_PIN, LOW);
-
-  // measure duration of pulse from ECHO pin
-  durationUs = pulseIn(ECHO_PIN, HIGH);
-  // calculate the distance
-  distanceCm = 0.017 * durationUs;
-
-  if(distanceCm < SONAR_RANGE){
-     digitalWrite(LED_PIN, HIGH); // turn on LED   
-  }else{
-     digitalWrite(LED_PIN, LOW); // turn off LED   
+// Function that executes when the IR sensor is triggered by a falling signal
+void irInterrupt(void) {
+  static unsigned long last_iq_time = 0;
+  unsigned long iq_time = millis();
+  if ((iq_time - last_iq_time) > 800) {
+    Serial.println("Debounced");
+    dispenser1.stopDispensing();
+    dispenser2.stopDispensing();
+    dispenser3.stopDispensing();
   }
 
-  // FIXME: Check if this interferes with the program
-  delay(5000);
+  last_iq_time = iq_time;
+ 
 }
