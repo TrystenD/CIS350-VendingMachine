@@ -130,7 +130,8 @@ class LightingSystem {
 
     void updateLights(void) {
       bool isPerson = checkForPerson();
-      unsigned int timeout = 0.2 * 60000;
+      unsigned int timeout = 1
+      * 60000;
 
       if (isPerson)
         turnOnLights();
@@ -164,7 +165,8 @@ ItemDispenser dispenser1, dispenser2, dispenser3;
 #define SONAR_TRIG_PIN   13
 #define SONAR_ECHO_PIN   14
 #define LED_PIN          15
-//LightingSystem lightSys(SONAR_TRIG_PIN, SONAR_ECHO_PIN, LED_PIN);
+
+LightingSystem lightSys(SONAR_TRIG_PIN, SONAR_ECHO_PIN, LED_PIN);
 
 /****************************************** Tocuhscreen calibration data */
 #define TS_MINX     10
@@ -306,7 +308,7 @@ int impulseCount = 0; // Flag to indicate a coin was accepted
 
 // Monetary counters
 uint8_t machineCoinBank = 0; // Total number of coins in machine
-uint8_t coinBalance = 15;     // User's current coin balance
+uint8_t coinBalance = 0;     // User's current coin balance
 uint8_t amntDue = 0;         // Amount due by user
 uint8_t selectedItem = 0;    // The item selected by user
 
@@ -343,12 +345,9 @@ void setup()
 
   // Setup IR sensor
   pinMode(IR_PIN, INPUT);
-  //attachInterrupt(digitalPinToInterrupt(IR_PIN), irInterrupt, FALLING);
 
   // Setup initial item values
   initItems();
-
-  //dispenser1.startDispensing();
 }
 
 void loop()
@@ -363,7 +362,7 @@ void loop()
       {
         drawItemMenu();
         while (state == SM_IDLE) {
-          //lightSys.updateLights();
+          lightSys.updateLights();
           handleItemMenu();
         }
         break;
@@ -372,7 +371,7 @@ void loop()
       {
         drawAcceptCoinMenu();
         while (state == SM_ACCEPT_COINS) {
-          //lightSys.updateLights();
+          lightSys.updateLights();
           handleAcceptCoinMenu();
         }
         break;
@@ -381,7 +380,7 @@ void loop()
       {
         drawDispenseMenu();
         while (state == SM_DISPENSE) {
-          //lightSys.updateLights();
+          lightSys.updateLights();
           handleDispenseMenu();
         }
         break;
@@ -390,7 +389,7 @@ void loop()
       {
         drawPasswordMenu();
         while (state == SM_PASSWORD) {
-          //lightSys.updateLights();
+          lightSys.updateLights();
           handlePasswordMenu();
         }
         break;
@@ -399,6 +398,7 @@ void loop()
       {
         drawSetItemMenu();
         while (state == SM_MAINTENENCE) {
+          lightSys.updateLights();
           handleSetItemMenu();
         }
         break;
@@ -410,10 +410,6 @@ void loop()
   } // end switch
 } // end loop()
 
-//ISR(TIMER2_COMPB_vect){                               
-//  LED_STATE1 = !LED_STATE1;    //Invert LED state
-//  digitalWrite(32,LED_STATE1);  //Write new state to the LED on pin D5
-//}
 
 /****************************************** Function Definitions */
 
@@ -639,8 +635,14 @@ void handleAcceptCoinMenu(void) {
     amntDue -= 1;                                 // Decrease amount due
 
     // Update amount due on LCD
-    tft.fillRect(300, 185, 200, 55, HX8357_BLACK);
-    tft.setCursor(275, 190);
+    tft.fillRect(0, 190, 450, 70, HX8357_BLACK);
+
+    tft.setTextColor(HX8357_CYAN);
+    tft.setCursor(50, 200);
+    tft.print("Amnt Due: ");
+  
+    // Draw initial amount due
+    tft.setTextColor(HX8357_GREEN);
     tft.print(validCoinAmounts[amntDue]);
 
     if (amntDue == 0) {
@@ -697,6 +699,7 @@ int sensor = 1;
 void handleDispenseMenu(void) {
   if (selectedItem == 1) {
     coinBalance -= item1.price;
+    setItemCount(1, item1.count - 1);
     dispenser1.startDispensing();
     
     while(sensor == 1) {
@@ -706,6 +709,7 @@ void handleDispenseMenu(void) {
   }
   else if (selectedItem == 2) {
     coinBalance -= item2.price;
+    setItemCount(2, item2.count - 1);
     dispenser2.startDispensing();
     while(sensor == 1) {
       sensor = digitalRead(IR_PIN);
@@ -715,12 +719,14 @@ void handleDispenseMenu(void) {
   }
   else if (selectedItem == 3) {
     coinBalance -= item3.price;
+    setItemCount(3, item3.count - 1);
     dispenser3.startDispensing();
     while(sensor == 1) {
       sensor = digitalRead(IR_PIN);
     }
     dispenser2.stopDispensing();
   }
+  sensor = 1;
   selectedItem = 0;
   state = SM_IDLE;
 }
