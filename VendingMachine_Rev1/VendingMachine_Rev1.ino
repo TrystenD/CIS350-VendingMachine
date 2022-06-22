@@ -74,7 +74,7 @@ class ItemDispenser {
         }
 
         void startDispensing(void) {
-            s.write(105);
+            s.write(98);
             isRunning = true;
         }
 
@@ -109,7 +109,7 @@ class LightingSystem {
       float distance = duration * 0.034/2;
       //Serial.println(String(distance) + String(" - ") + String(isOn));
 
-      return distance<75;
+      return (distance < 75);
     }
     
 
@@ -136,13 +136,10 @@ class LightingSystem {
         turnOnLights();
         
       else if (isOn) {
-
         if ((millis() - startTime) > timeout)
           turnOffLights();
-   
       }
     }
-
 
     void turnOnLights(void) {
       startTime = millis();
@@ -150,7 +147,6 @@ class LightingSystem {
       digitalWrite(ledPin, HIGH);
       isOn = true;
     }
-
 
     void turnOffLights(void) {
       digitalWrite(ledPin, LOW);
@@ -161,14 +157,14 @@ class LightingSystem {
 #define DISPENSER_1_PIN  4
 #define DISPENSER_2_PIN  5
 #define DISPENSER_3_PIN  6
-#define IR_PIN           3
+#define IR_PIN           30
 
 ItemDispenser dispenser1, dispenser2, dispenser3;
 
 #define SONAR_TRIG_PIN   13
 #define SONAR_ECHO_PIN   14
 #define LED_PIN          15
-LightingSystem lightSys(SONAR_TRIG_PIN, SONAR_ECHO_PIN, LED_PIN);
+//LightingSystem lightSys(SONAR_TRIG_PIN, SONAR_ECHO_PIN, LED_PIN);
 
 /****************************************** Tocuhscreen calibration data */
 #define TS_MINX     10
@@ -188,8 +184,8 @@ LightingSystem lightSys(SONAR_TRIG_PIN, SONAR_ECHO_PIN, LED_PIN);
 // The four touchscreen analog pins to track touch location
 #define YP A2  // Y+ must be an analog pin, use "An" notation!
 #define XM A3  // X- must be an analog pin, use "An" notation!
-#define YM 7   // Y- Digital pin
-#define XP 8   // X+ Digital pin
+#define YM 22  // Y- Digital pin
+#define XP 23  // X+ Digital pin
 
 /****************************************** TFT LCD and Touchscreen Instantiation */
 Adafruit_HX8357 tft = Adafruit_HX8357(TFT_CS, TFT_DC, TFT_RST); // TFT LCD screen object
@@ -310,7 +306,7 @@ int impulseCount = 0; // Flag to indicate a coin was accepted
 
 // Monetary counters
 uint8_t machineCoinBank = 0; // Total number of coins in machine
-uint8_t coinBalance = 0;     // User's current coin balance
+uint8_t coinBalance = 15;     // User's current coin balance
 uint8_t amntDue = 0;         // Amount due by user
 uint8_t selectedItem = 0;    // The item selected by user
 
@@ -324,34 +320,39 @@ Item item1;
 Item item2;
 Item item3;
 
+uint8_t itemDetected = 0;
 
 /****************************************** Program Entry */
 void setup()
 {
   Serial.begin(115200);
-  //  tft.begin();
-  //  tft.fillScreen(HX8357_BLACK);
+
+  // Setup LCD
   tft.begin();
   tft.fillScreen(HX8357_BLACK);
   tft.setRotation(3);
   tft.setTextWrap(false);
 
-  //pinMode(32, OUTPUT);
-
+  // Setup Servo motors
   dispenser1.attachPin(DISPENSER_1_PIN);
   dispenser2.attachPin(DISPENSER_2_PIN);
   dispenser3.attachPin(DISPENSER_3_PIN);
+
+  // Setup coin selector
   attachInterrupt(digitalPinToInterrupt(2), coinDetected, RISING);
-  attachInterrupt(digitalPinToInterrupt(IR_PIN), irInterrupt, FALLING);
 
-  //timerInit();
+  // Setup IR sensor
+  pinMode(IR_PIN, INPUT);
+  //attachInterrupt(digitalPinToInterrupt(IR_PIN), irInterrupt, FALLING);
 
-  //coinBalance = 2;
-  initItems(); // Init item counts and prices
+  // Setup initial item values
+  initItems();
+
+  //dispenser1.startDispensing();
 }
 
 void loop()
-{
+{   
   switch (state)
   {
     case SM_SLEEP:
@@ -362,7 +363,7 @@ void loop()
       {
         drawItemMenu();
         while (state == SM_IDLE) {
-          lightSys.updateLights();
+          //lightSys.updateLights();
           handleItemMenu();
         }
         break;
@@ -371,7 +372,7 @@ void loop()
       {
         drawAcceptCoinMenu();
         while (state == SM_ACCEPT_COINS) {
-          lightSys.updateLights();
+          //lightSys.updateLights();
           handleAcceptCoinMenu();
         }
         break;
@@ -380,7 +381,7 @@ void loop()
       {
         drawDispenseMenu();
         while (state == SM_DISPENSE) {
-          lightSys.updateLights();
+          //lightSys.updateLights();
           handleDispenseMenu();
         }
         break;
@@ -389,7 +390,7 @@ void loop()
       {
         drawPasswordMenu();
         while (state == SM_PASSWORD) {
-          lightSys.updateLights();
+          //lightSys.updateLights();
           handlePasswordMenu();
         }
         break;
@@ -504,9 +505,9 @@ void initItems(void) {
   setItemPrice(2, 2);
   setItemPrice(3, 4);
 
-  setItemCount(1, 3);
-  setItemCount(2, 3);
-  setItemCount(3, 4);
+  setItemCount(1, 2);
+  setItemCount(2, 2);
+  setItemCount(3, 2);
 }
 
 
@@ -685,7 +686,7 @@ void coinDetected(void) {
   widthCount = 0;
 }
 
-
+int sensor = 1;
 /*
    @brief  Handles the inputs and UI outputs within the item dispense menu.
            This menu shows that an item is dispensing and thanks the user.
@@ -697,18 +698,30 @@ void handleDispenseMenu(void) {
   if (selectedItem == 1) {
     coinBalance -= item1.price;
     dispenser1.startDispensing();
+    
+    while(sensor == 1) {
+      sensor = digitalRead(IR_PIN);
+    }
+    dispenser1.stopDispensing();
   }
   else if (selectedItem == 2) {
     coinBalance -= item2.price;
+    dispenser2.startDispensing();
+    while(sensor == 1) {
+      sensor = digitalRead(IR_PIN);
+    }
+    while(digitalRead(IR_PIN) == 1);
+    dispenser2.stopDispensing();
   }
   else if (selectedItem == 3) {
     coinBalance -= item3.price;
+    dispenser3.startDispensing();
+    while(sensor == 1) {
+      sensor = digitalRead(IR_PIN);
+    }
+    dispenser2.stopDispensing();
   }
-
-  delay(4000);
-
-  //TODO: Set servo motor on and wait for IR sensor to trigger
-
+  selectedItem = 0;
   state = SM_IDLE;
 }
 
@@ -805,7 +818,6 @@ void handleItemMenu(void) {
     } // end for
   } // end if
 }
-
 
 
 /*
@@ -1031,6 +1043,7 @@ void drawSetItemMenu(void) {
   
 }
 
+
 /*
    @brief  This function draws all of the UI elements for the password menu.
 
@@ -1066,6 +1079,7 @@ void drawPasswordMenu(void) {
   // Text box to display entered password
   tft.drawRect(TEXT_BOX_X, TEXT_BOX_Y, TEXT_BOX_W, TEXT_BOX_H, HX8357_WHITE);
 }
+
 
 /*
    @brief  This function draws all of the UI elements for the select-item menu.
@@ -1120,6 +1134,7 @@ void drawItemMenu(void) {
   tft.print(validCoinAmounts[coinBalance]);
 }
 
+
 /*
    @brief  Draws the menu on the LCD for accepting coins from the user.
 
@@ -1152,6 +1167,7 @@ void drawAcceptCoinMenu(void) {
   tft.print(validCoinAmounts[amntDue]);
 }
 
+
 /*
    @brief  Draws the menu on the LCD for dispensing an item.
 
@@ -1165,6 +1181,7 @@ void drawDispenseMenu(void) {
   tft.setCursor(100, 125);
   tft.print("Dispensing...");
 }
+
 
 /*
    @brief  Blocking function that waits until a user lets go
@@ -1186,17 +1203,18 @@ void waitForUnpress(Adafruit_GFX_Button btn) {
   }
 }
 
-// Function that executes when the IR sensor is triggered by a falling signal
-void irInterrupt(void) {
-  static unsigned long last_iq_time = 0;
-  unsigned long iq_time = millis();
-  if ((iq_time - last_iq_time) > 800) {
-    Serial.println("Debounced");
-    dispenser1.stopDispensing();
-    dispenser2.stopDispensing();
-    dispenser3.stopDispensing();
-  }
 
-  last_iq_time = iq_time;
- 
-}
+// Function that executes when the IR sensor is triggered by a falling signal
+//void irInterrupt(void) {
+//  itemDetected = 1;
+////  static unsigned long last_iq_time = 0;
+////  unsigned long iq_time = millis();
+////  if ((iq_time - last_iq_time) > 800) {
+////    Serial.println("Debounced");
+////    dispenser1.stopDispensing();
+////    dispenser2.stopDispensing();
+////    dispenser3.stopDispensing();
+////  }
+////
+////  last_iq_time = iq_time;
+//}
